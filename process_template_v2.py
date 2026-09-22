@@ -1,0 +1,803 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+process_template_v2.py
+=======================
+Chuyen doi du lieu dang ky (STT | Ho va ten | Don vi cong tac | Email | SDT)
+sang dinh dang template loai 2 (Ten tai khoan | Email | So dien thoai |
+Mat khau | Gioi tinh | Ngay sinh | Don vi | To chuc).
+
+File mau loai 2 la PHAN MO RONG cua file mau loai 1 (them cac truong Ngay
+sinh, Gioi tinh, Don vi, To chuc), nen script nay AP DUNG DAY DU 3 QUY TAC
+GOC cua file mau 1 (tai su dung truc tiep tu extract_contacts.py - can nam
+CUNG THU MUC voi file nay), CONG THEM 2 QUY TAC RIENG cho Don vi/To chuc:
+
+0) 3 QUY TAC GOC (tu file mau 1, xem chi tiet trong extract_contacts.py):
+   - Email: chuan ve dinh dang hop le, viet thuong. Khong co email hop le
+     (thieu hoac sai dinh dang) -> BO QUA ban ghi, KHONG ghi vao ket qua.
+   - So dien thoai: chuan ve dang so VN (10 so, bat dau bang 0, khong ky tu
+     dac biet, viet lien). Khong chuan hoa duoc -> de trong (van giu ban
+     ghi, quy tac bo qua chi ap dung rieng cho email).
+   - Ho va ten: viet hoa chu cai dau moi tu, bo ky tu dac biet.
+   - Tu dong loai bo ban ghi TRUNG EMAIL (mac dinh bat, dung --no-dedupe de tat).
+   - Cac dong bi loai (thieu/sai email, trung email) duoc ghi lai DAY DU vao
+     1 tep bao cao rieng (<output>_can_kiem_tra.xlsx) kem STT/du lieu goc/ly
+     do - khong chi bao 1 con so tong.
+
+1) DON VI: chuan hoa ve dang "<cap hanh chinh> <ten rieng> - <tinh/thanh>".
+   - Voi don vi hanh chinh xa/phuong/thi tran: bo tien to "UBND"/"HDND",
+     giu "<Xa/Phuong/Thi tran> <Ten>", roi THEM ten tinh/thanh (dang ngan
+     gon, khong tien to) o cuoi, ngan cach boi " - " (vd "UBND phuong Ninh
+     Kieu" -> "Phuong Ninh Kieu - Can Tho").
+   - Voi cac co quan/don vi khac (So, Ban, Trung tam, Truong...): giu
+     nguyen ten rieng (chi mo rong cac tu viet tat pho bien: TT -> Trung
+     tam, TP. -> Thanh pho, CDCD -> Cao dang Cong dong, QLDA -> Quan ly
+     Du an...), CUNG THEM ten tinh/thanh o cuoi (vd "So Tu phap" -> "So Tu
+     phap - Can Tho").
+   - Neu ban than "Don vi cong tac" DA LA 1 don vi hanh chinh cap 1 (tinh/
+     thanh pho) - vd chi ghi "Tinh Hau Giang" - thi Don vi = CHI ten rieng,
+     bo tien to "tinh"/"thanh pho", KHONG them hau to (tranh lap: khong tra
+     ve "Hau Giang - Can Tho").
+
+2) TO CHUC: chuan hoa ve DUNG TEN CHINH THUC HIEN NAY cua don vi hanh chinh
+   cap 1 (tinh/thanh pho) MA don vi do truc thuoc, VIET HOA TOAN BO. Tu
+   dong nhan dien qua ten tinh/thanh CU hoac MOI xuat hien trong van ban
+   nguon (vd gap "Soc Trang" hoac "Hau Giang" -> tu dong quy ve "THANH PHO
+   CAN THO" vi 2 tinh nay da sap nhap vao TP Can Tho tu 1/7/2025). Neu
+   khong tim thay dau hieu nao trong van ban nguon, dung gia tri
+   `default_to_chuc` duoc chi dinh khi chay script (vi du toan bo file la
+   cua 1 to chuc duy nhat).
+
+6) Cac cot con lai (Mat khau, Gioi tinh, Ngay sinh) de TRONG - khong co du
+   lieu tuong ung trong nguon nen khong tu bia.
+
+Du lieu tham chieu PROVINCE_MERGE_MAP duoi day da duoc kiem chung qua tra
+cuu Nghi quyet 202/2025/QH15 va bai dang chinh thuc tren Cong TTDT Chinh
+phu (xaydungchinhsach.chinhphu.vn), hieu luc tu 12/6/2025 (chinh quyen moi
+hoat dong tu 1/7/2025). Vi day la thong tin hanh chinh CO THE TIEP TUC
+THAY DOI trong tuong lai, nen kiem tra lai neu dung cho du lieu cua thoi
+diem khac.
+
+Cach dung:
+    python3 process_template_v2.py \
+        --input DangKy_2109.xlsx \
+        --template TemplateV2.xlsx \
+        --output ket_qua_v2.xlsx \
+        --to-chuc "Can Tho"
+
+    --to-chuc: ten tinh/thanh (khong dau tien to) dung lam TO CHUC MAC DINH
+    cho cac dong ma khong tu nhan dien duoc tu van ban nguon (thuong la moi
+    dong, vi du "So Giao duc va Dao tao" khong tu no cho biet no thuoc tinh
+    nao). Bat buoc phai co it nhat 1 trong 2: --to-chuc HOAC du lieu nguon
+    tu no da du de nhan dien (hiem khi xay ra).
+"""
+
+import argparse
+import csv
+import os
+import re
+import sys
+import unicodedata
+
+import openpyxl
+from openpyxl.styles import Font
+
+# extract_contacts.py (tool file mau loai 1) can nam CUNG THU MUC voi file
+# nay - tai su dung nguyen ven 3 quy tac chuan hoa da kiem chung cua no
+# (email, so dien thoai, ho ten) vi file mau 2 la PHAN MO RONG cua file 1.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import extract_contacts as core  # noqa: E402
+
+# ---------------------------------------------------------------------------
+# 1. BANG THAM CHIEU SAP NHAP TINH/THANH 2025 (hieu luc 12/6/2025)
+#    Nguon: Nghi quyet 202/2025/QH15, Cong TTDT Chinh phu.
+#    Cau truc: ten CHINH THUC HIEN NAY -> (loai: "tinh"/"thanh pho",
+#              danh sach ten CU da sap nhap vao, KHONG ke chinh no).
+# ---------------------------------------------------------------------------
+PROVINCE_MERGE_MAP = {
+    "Tuyên Quang": ("tỉnh", ["Hà Giang"]),
+    "Lào Cai": ("tỉnh", ["Yên Bái"]),
+    "Thái Nguyên": ("tỉnh", ["Bắc Kạn"]),
+    "Phú Thọ": ("tỉnh", ["Vĩnh Phúc", "Hòa Bình"]),
+    "Bắc Ninh": ("tỉnh", ["Bắc Giang"]),
+    "Hưng Yên": ("tỉnh", ["Thái Bình"]),
+    "Hải Phòng": ("thành phố", ["Hải Dương"]),
+    "Ninh Bình": ("tỉnh", ["Hà Nam", "Nam Định"]),
+    "Quảng Trị": ("tỉnh", ["Quảng Bình"]),
+    "Đà Nẵng": ("thành phố", ["Quảng Nam"]),
+    "Quảng Ngãi": ("tỉnh", ["Kon Tum"]),
+    "Gia Lai": ("tỉnh", ["Bình Định"]),
+    "Khánh Hòa": ("tỉnh", ["Ninh Thuận"]),
+    "Lâm Đồng": ("tỉnh", ["Đắk Nông", "Bình Thuận"]),
+    "Đắk Lắk": ("tỉnh", ["Phú Yên"]),
+    "Hồ Chí Minh": ("thành phố", ["Bà Rịa - Vũng Tàu", "Bà Rịa Vũng Tàu", "Bình Dương"]),
+    "Đồng Nai": ("tỉnh", ["Bình Phước"]),
+    "Tây Ninh": ("tỉnh", ["Long An"]),
+    "Cần Thơ": ("thành phố", ["Sóc Trăng", "Hậu Giang"]),
+    "Vĩnh Long": ("tỉnh", ["Bến Tre", "Trà Vinh"]),
+    "Đồng Tháp": ("tỉnh", ["Tiền Giang"]),
+    "Cà Mau": ("tỉnh", ["Bạc Liêu"]),
+    "An Giang": ("tỉnh", ["Kiên Giang"]),
+    # 11 tinh/thanh KHONG sap nhap (giu nguyen) - van liet ke de tra cuu
+    # dong bo, danh sach "cu" rong vi khong hop nhat voi tinh nao khac.
+    "Cao Bằng": ("tỉnh", []),
+    "Điện Biên": ("tỉnh", []),
+    "Hà Tĩnh": ("tỉnh", []),
+    "Lai Châu": ("tỉnh", []),
+    "Lạng Sơn": ("tỉnh", []),
+    "Nghệ An": ("tỉnh", []),
+    "Quảng Ninh": ("tỉnh", []),
+    "Thanh Hóa": ("tỉnh", []),
+    "Sơn La": ("tỉnh", []),
+    "Hà Nội": ("thành phố", []),
+    "Huế": ("thành phố", []),
+}
+
+# Danh sach tat ca "ten cu" (tinh da bi sap nhap, khong con ton tai doc lap)
+# tro ve ten CHINH THUC HIEN NAY - dung de tu dong nhan dien Tổ chức tu van
+# ban nguon (vd gap "Soc Trang" trong 1 dong -> suy ra "Can Tho").
+_OLD_NAME_TO_CURRENT = {}
+for _current, (_loai, _old_names) in PROVINCE_MERGE_MAP.items():
+    for _old in _old_names:
+        _OLD_NAME_TO_CURRENT[_old] = _current
+# Ban than ten hien tai cung phai tu nhan dien duoc (vd van ban ghi thang
+# "Can Tho" - da la ten hien tai, khong can quy doi).
+for _current in PROVINCE_MERGE_MAP:
+    _OLD_NAME_TO_CURRENT.setdefault(_current, _current)
+
+
+def _deaccent(text):
+    """Bo dau tieng Viet (dung de so khop khong phan biet dau/khong dau)."""
+    if not text:
+        return ""
+    text = str(text).replace("đ", "d").replace("Đ", "D")
+    text = unicodedata.normalize("NFD", text)
+    return "".join(c for c in text if unicodedata.category(c) != "Mn")
+
+
+def _norm_key(text):
+    return _deaccent(text).lower().strip()
+
+
+# Tra cuu nhanh (khong dau, thuong) -> ten hien tai, sap xep theo do dai
+# GIAM DAN de uu tien khop cum dai truoc (vd "Ba Ria - Vung Tau" truoc "Ba Ria").
+_LOOKUP = sorted(
+    ((_norm_key(old), current) for old, current in _OLD_NAME_TO_CURRENT.items()),
+    key=lambda x: len(x[0]), reverse=True,
+)
+
+
+def get_current_province_name(name):
+    """Tra ve (ten_hien_tai, loai) tu 1 ten tinh/thanh (cu hoac moi), hoac
+    (None, None) neu khong nhan ra."""
+    key = _norm_key(name)
+    for old_key, current in _LOOKUP:
+        if old_key == key:
+            loai = PROVINCE_MERGE_MAP[current][0]
+            return current, loai
+    return None, None
+
+
+def detect_to_chuc_from_text(text):
+    """Quet 1 doan van ban (vd 'Don vi cong tac') tim ten tinh/thanh (cu
+    hoac moi) xuat hien trong do, tra ve TEN CHINH THUC HIEN NAY neu tim
+    thay, hoac None neu khong co dau hieu nao."""
+    if not text:
+        return None
+    key = _norm_key(text)
+    for old_key, current in _LOOKUP:
+        if not old_key:
+            continue
+        if re.search(r"(?<![a-z0-9])" + re.escape(old_key) + r"(?![a-z0-9])", key):
+            return current
+    return None
+
+
+# ---------------------------------------------------------------------------
+# 2. CHUAN HOA "DON VI"
+# ---------------------------------------------------------------------------
+_ADMIN_BODY_PATTERN = re.compile(
+    r"^\s*(?:UBND|HĐND|Ủy\s*ban\s*nhân\s*dân|Hội\s*đồng\s*nhân\s*dân)\s+"
+    r"(Xã|Phường|Thị\s*trấn)\s+(.+?)\s*$",
+    re.IGNORECASE,
+)
+
+# Cac tu viet tat pho bien can mo rong trong ten don vi (khong phai admin-body)
+_ABBREVIATIONS = [
+    (re.compile(r"^\s*TT\b\.?", re.IGNORECASE), "Trung tâm"),
+    (re.compile(r"\bTP\.\s*", re.IGNORECASE), "Thành phố "),
+    (re.compile(r"\bCĐCĐ\b", re.IGNORECASE), "Cao đẳng Cộng đồng"),
+    (re.compile(r"\bQLDA\b", re.IGNORECASE), "Quản lý Dự án"),
+]
+
+_ADMIN_LEVEL_DISPLAY = {"xã": "Xã", "phường": "Phường", "thị trấn": "Thị trấn"}
+
+_PROVINCE_PREFIX_RE = re.compile(r"^\s*(?:tỉnh|thành\s*phố)\s+", re.IGNORECASE)
+_ALL_PROVINCE_KEYS = {_norm_key(k) for k in _OLD_NAME_TO_CURRENT}
+
+
+def _title_case_vn(text):
+    """Viet hoa chu cai dau moi tu (giu nguyen dau tieng Viet)."""
+    words = text.split()
+    return " ".join(w[:1].upper() + w[1:] if w else w for w in words)
+
+
+def _resolve_current_province(raw_text, default_to_chuc=None):
+    """Xac dinh ten tinh/thanh HIEN TAI (khong tien to, khong viet hoa) ung
+    voi 1 doan van ban Don vi cong tac.
+
+    THU TU UU TIEN quan trong: NEU nguoi dung da chi dinh ro default_to_chuc
+    va gia tri do KHONG PHAI 1 tinh/thanh (vd ten 1 vien nghien cuu/bo
+    nganh cap trung uong nhu "Viện Năng lượng nguyên tử Việt Nam"), TIN
+    TUONG HOAN TOAN default_to_chuc va KHONG tu dong do tim ten tinh/thanh
+    trong van ban nua - vi rat de nham voi DIA DANH NAM SAN TRONG TEN
+    RIENG cua don vi (vd "Trung tâm Chiếu xạ Hà Nội" khong co nghia nguoi
+    do thuoc UBND Ha Noi, ma la ten rieng cua 1 trung tam truc thuoc vien
+    trung uong). Chi khi default_to_chuc THUC SU la 1 tinh/thanh (hoac
+    khong duoc chi dinh) thi moi dung ca che tu nhan dien qua van ban nhu
+    truoc (huu ich cho cac file ma cac tinh/thanh cu con xuat hien trong
+    van ban, vd Soc Trang/Hau Giang deu quy ve Can Tho)."""
+    if default_to_chuc:
+        matched, _loai = get_current_province_name(default_to_chuc)
+        if not matched:
+            return None  # to chuc la 1 thuc the khac tinh/thanh -> khong suy doan tu van ban nua
+        current = detect_to_chuc_from_text(raw_text)
+        return current or matched
+
+    return detect_to_chuc_from_text(raw_text)
+
+
+def normalize_don_vi(raw_don_vi_cong_tac, default_to_chuc=None):
+    """Ap dung quy tac 1: tra ve chuoi Don vi da chuan hoa, THEM ten tinh/
+    thanh (dang ngan gon, khong tien to, khong viet hoa toan bo) o CUOI,
+    ngan cach boi ' - ' (vd 'UBND Xa A' -> 'Xa A - Can Tho', 'So Tu phap'
+    -> 'So Tu phap - Can Tho') - CHI KHI thuc su xac dinh duoc 1 tinh/thanh
+    THAT SU (tu van ban hoac tu default_to_chuc khop voi bang tra cuu).
+    Neu to chuc KHONG PHAI tinh/thanh (vd 1 vien nghien cuu, bo/nganh cap
+    trung uong - default_to_chuc khong khop bang tra cuu) thi KHONG them
+    hau to nao (vi se thua/vo nghia, vd khong nen tra ve 'Vien Cong nghe
+    xa hiem - Vien Nang luong nguyen tu Viet Nam').
+
+    TRU truong hop chinh gia tri Don vi da la 1 don vi hanh chinh cap 1
+    (tinh/thanh) - luc do CHI bo tien to "tỉnh"/"thành phố" va GIU NGUYEN
+    ten nhu duoc ghi (KHONG doi sang ten hien tai neu la ten cu, KHONG them
+    hau to) - vi day chinh la gia tri cap-1 duoc de cap, khong can/khong
+    nen tu suy doan/doi ten no."""
+    if not raw_don_vi_cong_tac:
+        return ""
+    text = str(raw_don_vi_cong_tac).strip()
+
+    # Truong hop 1: don vi hanh chinh xa/phuong/thi tran voi tien to UBND/HDND
+    m = _ADMIN_BODY_PATTERN.match(text)
+    if m:
+        level_raw, name = m.group(1), m.group(2)
+        level_display = _ADMIN_LEVEL_DISPLAY.get(level_raw.lower().replace(" ", " "), level_raw.capitalize())
+        core = f"{level_display} {_title_case_vn(name)}"
+    else:
+        # Truong hop 2: ban than gia tri la 1 don vi hanh chinh cap 1 (tinh/tp),
+        # nhan biet qua tien to "tỉnh"/"thành phố", HOAC ca chuoi khop DUNG
+        # BANG 1 ten tinh/thanh da biet (cu hoac moi) ma khong co gi khac.
+        prefix_match = _PROVINCE_PREFIX_RE.match(text)
+        candidate = text[prefix_match.end():].strip() if prefix_match else text
+        if _norm_key(candidate) in _ALL_PROVINCE_KEYS:
+            return candidate  # giu nguyen ten nhu ghi, khong doi ten, khong them hau to
+
+        # Truong hop 3: co quan/don vi khac - mo rong viet tat, giu nguyen ten
+        for pattern, replacement in _ABBREVIATIONS:
+            text = pattern.sub(replacement, text)
+        core = re.sub(r"\s+", " ", text).strip()
+
+    province = _resolve_current_province(raw_don_vi_cong_tac, default_to_chuc=default_to_chuc)
+    if province:
+        return f"{core} - {province}"
+    return core
+
+
+# ---------------------------------------------------------------------------
+# 3. XAC DINH "TO CHUC"
+# ---------------------------------------------------------------------------
+def determine_to_chuc(raw_don_vi_cong_tac, default_to_chuc=None):
+    """Ap dung quy tac 2: tra ve chuoi TO CHUC da VIET HOA TOAN BO, hoac ""
+    neu khong xac dinh duoc (khong tim thay trong van ban VA khong co
+    default_to_chuc).
+
+    - Neu default_to_chuc duoc chi dinh nhung KHONG khop voi tinh/thanh nao
+      (vd ten 1 bo/nganh, vien nghien cuu cap trung uong nhu "Viện Năng
+      lượng nguyên tử Việt Nam") thi TIN TUONG HOAN TOAN gia tri do, dung
+      NGUYEN VAN (chi viet hoa toan bo) - KHONG tu dong do tim ten tinh/
+      thanh trong van ban (tranh nham voi dia danh nam san trong ten rieng
+      cua don vi, vd "Trung tâm Chiếu xạ Hà Nội" - xem giai thich chi tiet
+      trong _resolve_current_province).
+    - Nguoc lai (default_to_chuc la 1 tinh/thanh, hoac khong duoc chi dinh):
+      nhan dien tinh/thanh tu van ban (uu tien) hoac tu default_to_chuc,
+      dinh dang "<tỉnh/thành phố> <TEN>".
+    """
+    if default_to_chuc:
+        matched, loai = get_current_province_name(default_to_chuc)
+        if not matched:
+            return default_to_chuc.strip().upper()
+        current = detect_to_chuc_from_text(raw_don_vi_cong_tac)
+        if current:
+            loai2 = PROVINCE_MERGE_MAP.get(current, ("tỉnh", []))[0]
+            return f"{loai2} {current}".upper()
+        return f"{loai} {matched}".upper()
+
+    current = detect_to_chuc_from_text(raw_don_vi_cong_tac)
+    if current:
+        loai = PROVINCE_MERGE_MAP.get(current, ("tỉnh", []))[0]
+        return f"{loai} {current}".upper()
+    return ""
+
+
+# ---------------------------------------------------------------------------
+# 4. DOC NGUON + GHI RA TEMPLATE
+# ---------------------------------------------------------------------------
+SOURCE_HEADER_KEYWORDS = {
+    "stt": "stt",
+    "ho va ten": "name",
+    "ho ten": "name",
+    "ten tai khoan": "name",
+    "ten nguoi dung": "name",
+    "email": "email",
+    "thu dien tu": "email",
+    "sdt": "phone",
+    "so dien thoai": "phone",
+    "dien thoai": "phone",
+}
+# Cot "Don vi" duoc xu ly RIENG theo 2 tang uu tien (xem _find_source_columns):
+# uu tien 1 la cac cot NEU RO TEN DON VI/PHONG BAN (huu ich hon cho viec
+# chuan hoa Don vi/To chuc), uu tien 2 (chi dung khi KHONG co cot uu tien 1)
+# la cac cot "Chuc vu/Vi tri" - vi cac phieu dang ky thuong co CA 2 cot
+# rieng biet (vd "Phong ban/Bo phan" VA "Chuc vu"), va ten phong ban huu ich
+# hon nhieu so voi chuc danh cong viec khi dung lam "Don vi cong tac".
+UNIT_PRIMARY_KEYWORDS = ["don vi cong tac", "don vi", "phong ban", "bo phan", "co quan", "noi cong tac"]
+UNIT_FALLBACK_KEYWORDS = ["chuc vu", "chuc danh", "vi tri cong tac", "vi tri"]
+
+
+def _find_source_columns(header_row):
+    col_map = {}
+    for idx, cell in enumerate(header_row):
+        key = _norm_key(cell)
+        for kw, field in SOURCE_HEADER_KEYWORDS.items():
+            if kw in key and field not in col_map:
+                col_map[field] = idx
+    for idx, cell in enumerate(header_row):
+        if "unit" in col_map:
+            break
+        if any(kw in _norm_key(cell) for kw in UNIT_PRIMARY_KEYWORDS):
+            col_map["unit"] = idx
+    for idx, cell in enumerate(header_row):
+        if "unit" in col_map:
+            break
+        if any(kw in _norm_key(cell) for kw in UNIT_FALLBACK_KEYWORDS):
+            col_map["unit"] = idx
+    return col_map
+
+
+def _find_source_header_row(rows, max_scan=15):
+    """Quet toi da max_scan dong dau tien de tim dong TIEU DE THAT SU (co
+    nhan dien duoc it nhat cot 'name' hoac 'email'), UU TIEN dong cho ra
+    NHIEU cot nhan dien duoc nhat - vi khong phai luc nao dong 0 cung la
+    tieu de (nhieu file co dong van ban tieu de/ghi chu truoc do, hoac co
+    ca dong 'khoa ky thuat' lan dong 'nhan tieng Viet' - can chon dong day
+    du thong tin hon). Tra ve (chi_so_dong, col_map); (None, {}) neu khong
+    tim thay dong nao phu hop."""
+    best_idx, best_map = None, {}
+    for idx, row in enumerate(rows[:max_scan]):
+        col_map = _find_source_columns(row)
+        if ("name" in col_map or "email" in col_map) and len(col_map) > len(best_map):
+            best_idx, best_map = idx, col_map
+    return best_idx, best_map
+
+
+def _cell_display(value):
+    """Chuyen 1 gia tri o thanh chuoi HIEN THI gon gang (vd so thuc 1.0 ->
+    '1', KHONG phai '1.0') - chi dung de HIEN THI/ghi vao bao cao issues.
+    KHONG dung ket qua nay lam dau vao cho core.normalize_email/name/phone
+    - cac ham do tu xu ly kieu float/int rieng (vd SDT dang so thuc), neu
+    da bi ep thanh chuoi co duoi '.0' truoc thi se bi hong (mat SDT)."""
+    if value is None:
+        return ""
+    if isinstance(value, float):
+        return str(int(value)) if value.is_integer() else str(value)
+    return str(value).strip()
+
+
+def _looks_like_group_header(row, col_map):
+    """1 dong duoc coi la 'tieu de nhom' (vd danh dau bang so La Ma 'I',
+    'II'... ten 1 vien/trung tam lon hon ma cac dong nguoi tiep theo thuoc
+    ve) neu dong đó KHONG co email/SDT, va trong 2 cot LIEN QUAN (ten, don
+    vi) CHI co dung 1 cot chua noi dung. CO Y BO QUA cot STT khi dem - vi
+    dong tieu de nhom thuong VAN co danh dau o cot STT (vd so La Ma 'I'),
+    khong phai lac dong day la 1 dong du lieu that."""
+    email_idx = col_map.get("email")
+    phone_idx = col_map.get("phone")
+    has_email = email_idx is not None and email_idx < len(row) and row[email_idx] not in (None, "")
+    has_phone = phone_idx is not None and phone_idx < len(row) and row[phone_idx] not in (None, "")
+    if has_email or has_phone:
+        return False
+    relevant_idxs = [i for i in (col_map.get("name"), col_map.get("unit")) if i is not None]
+    if not relevant_idxs:
+        return False
+    non_empty_relevant = [row[i] for i in relevant_idxs if i < len(row) and row[i] not in (None, "")]
+    return len(non_empty_relevant) == 1
+
+
+def _group_header_text(row, col_map):
+    """Lay TEN NHOM tu 1 dong tieu de nhom: uu tien cot 'name' hoac 'unit'
+    (KHONG lay cot STT, vi cot do chi chua so La Ma/ky hieu danh dau, khong
+    phai ten nhom)."""
+    for field in ("name", "unit"):
+        idx = col_map.get(field)
+        if idx is not None and idx < len(row) and row[idx] not in (None, ""):
+            return _cell_display(row[idx])
+    stt_idx = col_map.get("stt")
+    for i, c in enumerate(row):
+        if i == stt_idx or c in (None, ""):
+            continue
+        return _cell_display(c)
+    return ""
+
+
+def _read_tables_and_context(input_path):
+    """Doc 1 tep nguon o BAT KY dinh dang nao (.xlsx/.xls/.pdf/.docx/.csv),
+    tra ve (list_of_tables, fallback_unit_text, needs_continuation_merge):
+      - list_of_tables: danh sach cac 'bang' (moi bang la list rows) - Excel/
+        CSV chi co 1 bang (ca sheet), con PDF/Word co the co NHIEU bang
+        (thuong da duoc gop trang qua core.merge_multi_page_tables).
+      - fallback_unit_text: ten don vi trich duoc tu PHAN VAN BAN TU DO cua
+        tai lieu (vd dong "Tên Cơ quan, đơn vị: Phòng Kinh tế xã Kon Đào"
+        thuong thay o dau cac phieu dang ky) - dung lam Don vi MAC DINH cho
+        CA FILE khi bang du lieu KHONG co cot Don vi/Phong ban rieng tren
+        tung dong. None neu khong tim thay hoac khong ap dung (Excel/CSV).
+      - needs_continuation_merge: True NEU dinh dang nay de bi ngat dong
+        GIUA 1 o khi doc bang (PDF/Word, do gioi han khong gian trang/wrap
+        chu) - CHI khi do moi nen goi core.merge_wrapped_continuation_rows.
+        Voi Excel/CSV (du lieu bang GOC, khong bi "ngat dong" theo nghia
+        nay), KHONG duoc goi ham do - 1 dong thieu ten (nhung co du lieu
+        khac) trong Excel la 1 VAN DE CHAT LUONG DU LIEU THAT (can bao vao
+        "Can kiem tra"), KHONG PHAI phan tiep cua dong truoc - goi nham ham
+        gop dong se lam MAT 1 nguoi (gop nham email cua ho vao nguoi truoc,
+        day la loi da gap va vua duoc sua)."""
+    ext = os.path.splitext(input_path)[1].lower()
+
+    if ext == ".xls":
+        core._patch_xlrd_tolerant_datemode()
+        import xlrd
+        wb = xlrd.open_workbook(input_path)
+        sheet = wb.sheet_by_index(0)
+        rows = core._rows_from_xlrd_sheet(sheet)
+        return [rows], None, False
+
+    if ext in (".xlsx", ".xlsm"):
+        src_wb = openpyxl.load_workbook(input_path, data_only=True)
+        src_ws = src_wb.active
+        rows = [list(row) for row in src_ws.iter_rows(values_only=True)]
+        return [rows], None, False
+
+    if ext == ".csv":
+        with open(input_path, newline="", encoding="utf-8-sig", errors="ignore") as f:
+            rows = [list(row) for row in csv.reader(f)]
+        return [rows], None, False
+
+    if ext == ".pdf":
+        import pdfplumber
+        raw_tables = []
+        context_text_parts = []  # TOAN BO van ban moi trang (bat ke co bang hay khong) - CHI
+                                  # dung de do "Tên Cơ quan, đơn vị: X" lam Don vi du phong,
+                                  # KHONG dung de trich xuat du lieu (tranh trung lap voi bang)
+        with pdfplumber.open(input_path) as pdf:
+            for page in pdf.pages:
+                page_tables = page.extract_tables() or []
+                if page_tables:
+                    raw_tables.extend(page_tables)
+                context_text_parts.append(page.extract_text() or "")
+        tables = core.merge_multi_page_tables(raw_tables)
+        return tables, _extract_doc_header_unit("\n".join(context_text_parts)), True
+
+    if ext == ".docx":
+        import docx
+        document = docx.Document(input_path)
+        raw_tables = [
+            [[core._full_cell_text(cell) for cell in row.cells] for row in table.rows]
+            for table in document.tables
+        ]
+        tables = core.merge_multi_page_tables(raw_tables)
+        free_text = "\n".join(core._full_paragraph_text(p) for p in document.paragraphs)
+        return tables, _extract_doc_header_unit(free_text), True
+
+    raise ValueError(f"Không hỗ trợ định dạng tệp: {ext} ({input_path})")
+
+
+_DOC_UNIT_CONTEXT_RE = re.compile(
+    r"(?:Tên\s*Cơ\s*quan,?\s*đơn\s*vị|Cơ\s*quan,?\s*đơn\s*vị)\s*[:\-]\s*(.+)",
+    re.IGNORECASE,
+)
+
+
+def _extract_doc_header_unit(free_text):
+    """Tim dong kieu 'Tên Cơ quan, đơn vị: X' trong phan van ban tu do o
+    dau tai lieu (thuong gap trong cac phieu dang ky dang PDF/Word) - dung
+    lam Don vi MAC DINH cho ca file khi bang du lieu khong co cot Don vi
+    rieng tren tung dong. Tra ve None neu khong tim thay."""
+    if not free_text:
+        return None
+    m = _DOC_UNIT_CONTEXT_RE.search(free_text)
+    if not m:
+        return None
+    value = m.group(1).strip().split("\n")[0].strip()
+    return value or None
+
+
+def _process_data_rows(data_rows, col_map, default_to_chuc, unit_cache, issues,
+                        clean_records, fallback_unit=None):
+    """Xu ly 1 danh sach data_rows (CUA 1 BANG, sau dong tieu de) theo dung
+    3 quy tac goc + 2 quy tac Don vi/To chuc, GOM VAO CHUNG unit_cache/
+    issues/clean_records duoc truyen tu ben ngoai (de cong don duoc qua
+    NHIEU bang trong cung 1 tep - vd PDF nhieu trang co nhieu bang rieng).
+    Tra ve total_read cua RIENG lan goi nay (de cong don o ham goi)."""
+
+    def get_raw(row, field):
+        idx = col_map.get(field)
+        if idx is None or idx >= len(row):
+            return None
+        return row[idx]
+
+    def get_display(row, field):
+        return _cell_display(get_raw(row, field))
+
+    current_group = None
+    group_header_seen = False
+    total_read = 0
+    for row in data_rows:
+        if row is None or all(c in (None, "") for c in row):
+            continue
+
+        if _looks_like_group_header(row, col_map):
+            current_group = _group_header_text(row, col_map)
+            group_header_seen = True
+            continue  # dong tieu de nhom - CHI cap nhat nhom hien tai, khong tinh la 1 dong du lieu
+
+        raw_stt = get_display(row, "stt")
+        raw_name = get_display(row, "name")
+        raw_email = get_display(row, "email")
+        raw_phone = get_display(row, "phone")
+        raw_unit = get_display(row, "unit")
+        if group_header_seen:
+            # File nay dung tieu de nhom de gom don vi (xem docstring
+            # extract_v2) - uu tien ten nhom hien tai thay vi cot "Don vi
+            # cong tac" tren tung dong (cot do, neu co, thuong khong dang
+            # tin cay trong kieu file nay - vd co the la ten tai khoan
+            # thay vi ten don vi).
+            raw_unit = current_group or raw_unit
+        if not raw_unit and fallback_unit:
+            # Khong co cot Don vi rieng tren tung dong (VA khong dung co
+            # che nhom o tren) - dung Don vi trich tu phan van ban tu do
+            # dau tai lieu (vd "Tên Cơ quan, đơn vị: X") cho MOI nguoi
+            # trong bang nay (thuong gap o cac phieu dang ky 1 don vi
+            # duy nhat, vd file PDF cua 1 phong/xa cu the).
+            raw_unit = fallback_unit
+        if not raw_name and not raw_email and not raw_phone and not raw_unit:
+            continue  # dong hoan toan trong - bo qua, khong tinh vao thong ke
+        total_read += 1
+
+        # --- Ap dung 3 quy tac goc cua file mau 1 (dung GIA TRI THO, chua
+        # ep kieu, de khong lam hong SDT/email dang so) ---
+        email = core.normalize_email(get_raw(row, "email"))
+        if not email:
+            reason = "invalid_email_format" if raw_email else "missing_email"
+            issues.append({
+                "stt": raw_stt, "raw_name": raw_name, "raw_email": raw_email,
+                "raw_phone": raw_phone, "raw_unit": raw_unit, "reason": reason,
+            })
+            continue  # Quy tac 1: khong co email hop le -> bo qua ban ghi
+
+        name = core.normalize_name(raw_name)
+        phone = core.normalize_phone(get_raw(row, "phone"))
+
+        # --- Ap dung 2 quy tac rieng cua file mau 2 ---
+        if raw_unit not in unit_cache:
+            unit_cache[raw_unit] = (
+                normalize_don_vi(raw_unit, default_to_chuc=default_to_chuc),
+                determine_to_chuc(raw_unit, default_to_chuc=default_to_chuc),
+            )
+        don_vi, to_chuc = unit_cache[raw_unit]
+
+        clean_records.append({
+            "stt": raw_stt, "name": name, "email": email, "phone": phone,
+            "don_vi": don_vi, "to_chuc": to_chuc,
+        })
+
+    return total_read
+
+
+def extract_v2(input_path, default_to_chuc=None, dedupe=True, verbose=True):
+    """
+    Doc tep dang ky nguon VA AP DUNG DAY DU 3 QUY TAC CUA FILE MAU LOAI 1
+    (tai su dung truc tiep tu extract_contacts.py) CONG 2 QUY TAC RIENG
+    (Don vi, To chuc). KHONG GHI RA FILE (dung cho buoc xem truoc truoc khi
+    xuat) - xem write_v2_output() de ghi ket qua, write_v2_issues() de ghi
+    bao cao cac dong bi loai.
+
+    HO TRO NHIEU DINH DANG TEP NGUON: .xlsx/.xls/.csv (dang bang co san) VA
+    CA .pdf/.docx (tai lieu/cong van tu do, dung chung bo may doc bang cua
+    file mau loai 1 - tim va gop bang qua nhieu trang, ghep dong bi ngat...
+    - nhung KHAC file mau loai 1 o cho GIU LAI cot "Don vi/Phong ban/Chuc
+    vu" tren tung dong thay vi loc bo, vi che do nay CAN thong tin do de
+    chuan hoa Don vi/To chuc).
+
+    Ho tro 3 kieu xac dinh "Don vi cong tac" cho tung nguoi, THEO THU TU
+    UU TIEN:
+      1) Co san 1 cot Don vi/Phong ban/Chuc vu dien tren TUNG DONG (vd
+         danh sach cua 1 tinh/thanh, hoac phieu dang ky co cot rieng).
+      2) KHONG co cot do (hoac khong dang tin cay), nhung co CAC DONG TIEU
+         DE NHOM (vd danh dau so La Ma 'I', 'II'... ten 1 vien/trung tam)
+         de gom nhom nguoi phia duoi - dung TEN NHOM lam Don vi.
+      3) KHONG co ca 2 dieu tren (thuong gap o PHIEU DANG KY PDF/Word cho
+         1 DON VI DUY NHAT, khong co cot Don vi rieng vi ca phieu la cua
+         1 co quan) - tu dong tim dong "Tên Cơ quan, đơn vị: X" trong phan
+         van ban tu do o dau tai lieu, dung X lam Don vi cho TOAN BO nguoi
+         trong phieu.
+
+    Tra ve (clean_records, stats). clean_records: list dict
+    {name,email,phone,don_vi,to_chuc}, DA loc trung email neu dedupe=True,
+    giu THU TU GOC. stats: dict {total_read, valid_before_dedupe,
+    duplicates_removed, final_count, to_chuc_missing, issues, unit_cache}.
+    """
+    tables, fallback_unit, needs_continuation_merge = _read_tables_and_context(input_path)
+    if not tables or not any(tables):
+        raise ValueError("Tệp nguồn không có dữ liệu.")
+
+    unit_cache = {}
+    issues = []
+    clean_records = []
+    total_read = 0
+    any_header_found = False
+
+    for table in tables:
+        if not table:
+            continue
+        header_idx, col_map = _find_source_header_row(table)
+        if header_idx is None or ("name" not in col_map and "email" not in col_map):
+            continue  # bang nay khong co dong tieu de phu hop - bo qua (vd bang phu/khong lien quan)
+        any_header_found = True
+        data_rows = table[header_idx + 1:]
+        if needs_continuation_merge:
+            data_rows = core.merge_wrapped_continuation_rows(data_rows, col_map.get("name"))
+        total_read += _process_data_rows(
+            data_rows, col_map, default_to_chuc, unit_cache, issues, clean_records,
+            fallback_unit=fallback_unit,
+        )
+
+    if not any_header_found:
+        raise ValueError(
+            "Không tìm thấy bảng dữ liệu phù hợp trong tệp nguồn (cần ít nhất cột "
+            "Họ và tên hoặc Email). Vui lòng kiểm tra lại cấu trúc tệp."
+        )
+
+    # --- Loc trung email (mac dinh bat, giong file mau 1) ---
+    duplicates_removed = 0
+    if dedupe:
+        seen = set()
+        deduped = []
+        for rec in clean_records:
+            if rec["email"] in seen:
+                issues.append({
+                    "stt": rec["stt"], "raw_name": rec["name"], "raw_email": rec["email"],
+                    "raw_phone": rec["phone"], "raw_unit": rec["don_vi"], "reason": "duplicate_email",
+                })
+                duplicates_removed += 1
+                continue
+            seen.add(rec["email"])
+            deduped.append(rec)
+        clean_records = deduped
+
+    to_chuc_missing = sum(1 for r in clean_records if not r["to_chuc"])
+
+    stats = {
+        "total_read": total_read,
+        "valid_before_dedupe": total_read - (len(issues) - duplicates_removed),
+        "duplicates_removed": duplicates_removed,
+        "final_count": len(clean_records),
+        "to_chuc_missing": to_chuc_missing,
+        "issues": issues,
+        "unit_cache": unit_cache,
+    }
+
+    if verbose:
+        print_v2_stats_report(stats)
+
+    return clean_records, stats
+
+
+def print_v2_stats_report(stats):
+    print(f"Tổng số dòng đọc được:                      {stats['total_read']}")
+    print(f"Số dòng bị loại - thiếu/sai email:          "
+          f"{sum(1 for i in stats['issues'] if i['reason'] in ('missing_email', 'invalid_email_format'))}")
+    print(f"Số dòng bị loại - trùng email:               {stats['duplicates_removed']}")
+    print(f"Còn lại sau cùng:                            {stats['final_count']}")
+    if stats["to_chuc_missing"]:
+        print(f"CẢNH BÁO: {stats['to_chuc_missing']} dòng không xác định được 'Tổ chức' "
+              f"(để trống) - kiểm tra lại --to-chuc hoặc dữ liệu nguồn.")
+
+
+def write_v2_output(records, template_path, output_path):
+    """Ghi cac ban ghi (dict name/email/phone/don_vi/to_chuc) ra file Excel
+    theo file mau loai 2. Cac cot Mat khau/Gioi tinh/Ngay sinh de trong."""
+    out_wb = openpyxl.load_workbook(template_path)
+    out_ws = out_wb.active
+    header_cells = list(out_ws[1])
+    sample_font = Font(name=header_cells[0].font.name, size=header_cells[0].font.sz)
+
+    row_idx = 2
+    for rec in records:
+        values = [rec["name"], rec["email"], rec["phone"], "", "", "", rec["don_vi"], rec["to_chuc"]]
+        for col_i, value in enumerate(values, start=1):
+            out_ws.cell(row=row_idx, column=col_i, value=value or None).font = sample_font
+        row_idx += 1
+    out_wb.save(output_path)
+
+
+def write_v2_issues(issues, issues_output_path):
+    """Ghi bao cao cac dong bi loai (kem STT/du lieu goc/ly do) ra 1 file
+    Excel rieng, phuc vu tab "Can kiem tra" / doi chieu ngoai CLI."""
+    issues_wb = openpyxl.Workbook()
+    issues_ws = issues_wb.active
+    issues_ws.title = "can_kiem_tra"
+    issues_ws.append(["STT", "Họ và tên (gốc)", "Email (gốc)", "Điện thoại (gốc)",
+                       "Đơn vị công tác (gốc)", "Lý do"])
+    for issue in issues:
+        reason_label = core.ISSUE_REASON_LABELS.get(issue["reason"], issue["reason"])
+        issues_ws.append([issue["stt"], issue["raw_name"], issue["raw_email"],
+                           issue["raw_phone"], issue["raw_unit"], reason_label])
+    issues_wb.save(issues_output_path)
+
+
+def process(input_path, template_path, output_path, default_to_chuc=None,
+            dedupe=True, issues_output_path=None, verbose=True):
+    """Ham tien ich cho CLI: goi extract_v2() + write_v2_output() +
+    write_v2_issues() theo dung thu tu, giu tuong thich nguoc voi cach goi
+    cu. Tra ve (so_dong_ghi_duoc, thong_ke)."""
+    records, stats = extract_v2(input_path, default_to_chuc=default_to_chuc,
+                                 dedupe=dedupe, verbose=False)
+    write_v2_output(records, template_path, output_path)
+
+    issues = stats["issues"]
+    if issues_output_path is None and issues:
+        base, _ext = os.path.splitext(output_path)
+        issues_output_path = f"{base}_can_kiem_tra.xlsx"
+    if issues and issues_output_path:
+        write_v2_issues(issues, issues_output_path)
+
+    if verbose:
+        print_v2_stats_report(stats)
+        print(f"Đã ghi: {output_path}")
+        if issues and issues_output_path:
+            print(f"Đã ghi báo cáo các dòng bị loại ({len(issues)} dòng): {issues_output_path}")
+        print()
+        print("Các giá trị 'Đơn vị công tác' gốc -> (Đơn vị, Tổ chức) đã chuẩn hoá:")
+        for raw, (don_vi, to_chuc) in sorted(stats["unit_cache"].items()):
+            print(f"  {raw!r:55s} -> Đơn vị={don_vi!r:35s} Tổ chức={to_chuc!r}")
+
+    return stats["final_count"], stats
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Chuẩn hoá dữ liệu đăng ký sang template loại 2.")
+    parser.add_argument("--input", required=True, help="Tệp Excel nguồn (STT/Họ và tên/Đơn vị công tác/Email/SĐT)")
+    parser.add_argument("--template", required=True, help="Tệp Excel mẫu (template loại 2)")
+    parser.add_argument("--output", required=True, help="Đường dẫn tệp Excel kết quả")
+    parser.add_argument("--to-chuc", default=None,
+                         help="Tên tỉnh/thành (không tiền tố) dùng mặc định cho 'Tổ chức' khi "
+                              "không tự nhận diện được từ dữ liệu nguồn, vd: 'Cần Thơ'")
+    parser.add_argument("--no-dedupe", action="store_true", help="Không loại bỏ bản ghi trùng email")
+    parser.add_argument("--issues-output", default=None,
+                         help="Đường dẫn tệp Excel báo cáo các dòng bị loại (mặc định: "
+                              "<output>_can_kiem_tra.xlsx nếu có dòng bị loại)")
+    args = parser.parse_args()
+    process(args.input, args.template, args.output, default_to_chuc=args.to_chuc,
+            dedupe=not args.no_dedupe, issues_output_path=args.issues_output)
+
+
+if __name__ == "__main__":
+    main()
