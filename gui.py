@@ -484,8 +484,12 @@ class ContactExtractorGUI(tk.Tk):
         self.mode2_input_path = tk.StringVar()
         self.to_chuc_var = tk.StringVar()
 
-        self.base_font_family = _pick_font(["Segoe UI", "Helvetica Neue", "Helvetica", "Arial"])
-        self.mono_font_family = _pick_font(["Cascadia Mono", "Consolas", "Menlo", "Courier New"])
+        # Font dạng monospace lập trình (giống phong cách Claude Code), có đầy đủ
+        # bộ ký tự tiếng Việt có dấu (nguyên âm đôi, dấu thanh, chữ Đ/đ...).
+        _CODE_FONT_STACK = ["Cascadia Code", "Cascadia Mono", "JetBrains Mono",
+                             "Fira Code", "Consolas", "Menlo", "SF Mono", "Courier New"]
+        self.base_font_family = _pick_font(_CODE_FONT_STACK)
+        self.mono_font_family = _pick_font(_CODE_FONT_STACK)
 
         self._setup_style()
         self._build_widgets()
