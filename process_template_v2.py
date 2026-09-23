@@ -334,6 +334,7 @@ def determine_to_chuc(raw_don_vi_cong_tac, default_to_chuc=None):
 # ---------------------------------------------------------------------------
 SOURCE_HEADER_KEYWORDS = {
     "stt": "stt",
+    "tt": "stt",
     "ho va ten": "name",
     "ho ten": "name",
     "ten tai khoan": "name",
@@ -356,11 +357,27 @@ UNIT_FALLBACK_KEYWORDS = ["chuc vu", "chuc danh", "vi tri cong tac", "vi tri"]
 
 def _find_source_columns(header_row):
     col_map = {}
+    email_candidates = []
     for idx, cell in enumerate(header_row):
         key = _norm_key(cell)
         for kw, field in SOURCE_HEADER_KEYWORDS.items():
-            if kw in key and field not in col_map:
-                col_map[field] = idx
+            if kw in key:
+                if field == "email":
+                    # Co the co NHIEU cot cung khop tu khoa email (vd "Thư
+                    # điện tử công vụ" VA "Thư điện tử Gmail" - da gap thuc
+                    # te: nhieu dong de trong cot dau, ghi email o cot sau
+                    # thay the) - luu lai TAT CA de dung lam du phong, thay
+                    # vi chi lay 1 cot roi bo qua cac cot con lai.
+                    if idx not in email_candidates:
+                        email_candidates.append(idx)
+                elif field not in col_map:
+                    col_map[field] = idx
+    for idx in range(1, len(email_candidates)):
+        # Cot email THU 2 tro di duoc luu la "email_alt" (chi 1 cot du
+        # phong la du dung cho hau het truong hop thuc te).
+        col_map.setdefault("email_alt", email_candidates[idx])
+    if email_candidates:
+        col_map["email"] = email_candidates[0]
     for idx, cell in enumerate(header_row):
         if "unit" in col_map:
             break
@@ -546,6 +563,15 @@ def _process_data_rows(data_rows, col_map, default_to_chuc, unit_cache, issues,
     def get_display(row, field):
         return _cell_display(get_raw(row, field))
 
+    def get_email_raw(row):
+        """Uu tien cot email CHINH; neu rong VA co cot email DU PHONG (vd
+        'Thư điện tử Gmail' khi 'Thư điện tử công vụ' de trong), dung cot
+        du phong thay the - xem _find_source_columns."""
+        primary = get_raw(row, "email")
+        if primary not in (None, ""):
+            return primary
+        return get_raw(row, "email_alt")
+
     current_group = None
     group_header_seen = False
     total_read = 0
@@ -560,7 +586,7 @@ def _process_data_rows(data_rows, col_map, default_to_chuc, unit_cache, issues,
 
         raw_stt = get_display(row, "stt")
         raw_name = get_display(row, "name")
-        raw_email = get_display(row, "email")
+        raw_email = _cell_display(get_email_raw(row))
         raw_phone = get_display(row, "phone")
         raw_unit = get_display(row, "unit")
         if group_header_seen:
@@ -583,7 +609,7 @@ def _process_data_rows(data_rows, col_map, default_to_chuc, unit_cache, issues,
 
         # --- Ap dung 3 quy tac goc cua file mau 1 (dung GIA TRI THO, chua
         # ep kieu, de khong lam hong SDT/email dang so) ---
-        email = core.normalize_email(get_raw(row, "email"))
+        email = core.normalize_email(get_email_raw(row))
         if not email:
             reason = "invalid_email_format" if raw_email else "missing_email"
             issues.append({
