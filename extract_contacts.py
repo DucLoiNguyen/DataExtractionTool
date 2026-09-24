@@ -623,10 +623,13 @@ def read_xls_file(path, row_stats=None, source_label=None):
                 pass
 
 
-def _convert_xls_via_libreoffice(path):
-    """Goi LibreOffice (soffice) o che do nen de chuyen 1 file .xls sang
-    .xlsx trong 1 thu muc tam. Tra ve duong dan file .xlsx da chuyen, hoac
-    None neu khong tim thay LibreOffice / chuyen doi that bai."""
+def _convert_via_libreoffice(path, target_format):
+    """Goi LibreOffice (soffice) o che do nen de chuyen 1 file sang dinh
+    dang `target_format` (vd 'xlsx', 'docx') trong 1 thu muc tam. Tra ve
+    duong dan file da chuyen, hoac None neu khong tim thay LibreOffice /
+    chuyen doi that bai. Dung chung cho ca .xls->.xlsx va .doc->.docx (2
+    dinh dang Office cu deu can LibreOffice vi thu vien Python thuan
+    (openpyxl/python-docx) chi doc duoc dinh dang moi hon)."""
     import shutil
     import subprocess
     import tempfile
@@ -635,10 +638,10 @@ def _convert_xls_via_libreoffice(path):
     if not soffice:
         return None
 
-    out_dir = tempfile.mkdtemp(prefix="xls_convert_")
+    out_dir = tempfile.mkdtemp(prefix="office_convert_")
     try:
         subprocess.run(
-            [soffice, "--headless", "--convert-to", "xlsx", "--outdir", out_dir, path],
+            [soffice, "--headless", "--convert-to", target_format, "--outdir", out_dir, path],
             check=True, capture_output=True, timeout=120,
         )
     except Exception:
@@ -649,8 +652,13 @@ def _convert_xls_via_libreoffice(path):
         return None
 
     base_name = os.path.splitext(os.path.basename(path))[0]
-    converted = os.path.join(out_dir, base_name + ".xlsx")
+    converted = os.path.join(out_dir, base_name + "." + target_format)
     return converted if os.path.exists(converted) else None
+
+
+def _convert_xls_via_libreoffice(path):
+    """Rieng cho .xls->.xlsx - xem _convert_via_libreoffice."""
+    return _convert_via_libreoffice(path, "xlsx")
 
 
 def read_excel_file(path, row_stats=None, source_label=None):
@@ -714,29 +722,51 @@ def read_docx_file(path, row_stats=None, source_label=None):
     import docx
 
     label = source_label or os.path.basename(path)
-    document = docx.Document(path)
-    records = []
+    converted_path = None
+    if os.path.splitext(path)[1].lower() == ".doc":
+        # File Word 97-2003 cu (.doc, khac .docx) - python-docx KHONG doc
+        # duoc dinh dang nay (chi ho tro .docx dang zip/XML moi hon). Tu
+        # dong chuyen doi sang .docx tam thoi qua LibreOffice truoc khi doc.
+        converted_path = _convert_via_libreoffice(path, "docx")
+        if converted_path is None:
+            raise ValueError(
+                "Không thể đọc tệp .doc này: cần LibreOffice (soffice) trên máy để tự động "
+                "chuyển đổi nhưng không tìm thấy. Cách khắc phục: mở tệp bằng Word và 'Save As' "
+                "sang định dạng .docx rồi thử lại, hoặc cài LibreOffice (https://www.libreoffice.org/)."
+            )
+        path = converted_path
 
-    # 4a. Cac bang trong file Word. LUU Y: Word (hoac nguoi soan thao) co the
-    # tach 1 danh sach dai thanh NHIEU BANG RIENG BIET trong cung file (vd do
-    # ngat trang khi go tay), nhung CHI bang dau tien co dong tieu de - cac
-    # bang sau bat dau thang bang du lieu. Dung chung ham gop bang (da dung
-    # cho PDF nhieu trang) de tranh mat du lieu / hieu nham dong du lieu dau
-    # tien cua cac bang sau la tieu de. Dung _full_cell_text (khong phai
-    # cell.text) de khong bo sot email/SDT duoc chen dang hyperlink.
-    raw_tables = [
-        [[_full_cell_text(cell) for cell in row.cells] for row in table.rows]
-        for table in document.tables
-    ]
-    for logical_table in merge_multi_page_tables(raw_tables):
-        records.extend(extract_from_table_rows(logical_table, row_stats=row_stats, source_label=label))
+    try:
+        document = docx.Document(path)
+        records = []
 
-    # 4b. Van ban tu do (paragraph) - gom theo tung "khoi" ban ghi. Cung dung
-    # _full_paragraph_text de khong bo sot noi dung trong hyperlink.
-    full_text = "\n".join(_full_paragraph_text(p) for p in document.paragraphs)
-    records.extend(extract_from_free_text(full_text, row_stats=row_stats, source_label=label))
+        # 4a. Cac bang trong file Word. LUU Y: Word (hoac nguoi soan thao) co the
+        # tach 1 danh sach dai thanh NHIEU BANG RIENG BIET trong cung file (vd do
+        # ngat trang khi go tay), nhung CHI bang dau tien co dong tieu de - cac
+        # bang sau bat dau thang bang du lieu. Dung chung ham gop bang (da dung
+        # cho PDF nhieu trang) de tranh mat du lieu / hieu nham dong du lieu dau
+        # tien cua cac bang sau la tieu de. Dung _full_cell_text (khong phai
+        # cell.text) de khong bo sot email/SDT duoc chen dang hyperlink.
+        raw_tables = [
+            [[_full_cell_text(cell) for cell in row.cells] for row in table.rows]
+            for table in document.tables
+        ]
+        for logical_table in merge_multi_page_tables(raw_tables):
+            records.extend(extract_from_table_rows(logical_table, row_stats=row_stats, source_label=label))
 
-    return records
+        # 4b. Van ban tu do (paragraph) - gom theo tung "khoi" ban ghi. Cung dung
+        # _full_paragraph_text de khong bo sot noi dung trong hyperlink.
+        full_text = "\n".join(_full_paragraph_text(p) for p in document.paragraphs)
+        records.extend(extract_from_free_text(full_text, row_stats=row_stats, source_label=label))
+
+        return records
+    finally:
+        if converted_path:
+            try:
+                os.remove(converted_path)
+                os.rmdir(os.path.dirname(converted_path))
+            except OSError:
+                pass
 
 
 # ---------------------------------------------------------------------------
@@ -896,7 +926,7 @@ def extract_from_file(path, row_stats=None):
         return read_xls_file(path, row_stats=row_stats, source_label=label)
     if ext == ".csv":
         return read_csv_file(path, row_stats=row_stats, source_label=label)
-    if ext == ".docx":
+    if ext in (".docx", ".doc"):
         return read_docx_file(path, row_stats=row_stats, source_label=label)
     if ext == ".pdf":
         return read_pdf_file(path, row_stats=row_stats, source_label=label)

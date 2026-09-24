@@ -75,8 +75,8 @@ M1_ISSUE_HEADINGS = {
 M1_ISSUE_SORTABLE = {"source": "source", "row_number": "row_number", "reason": "reason"}
 
 # ----- Cot cho CHE DO 2 -----
-M2_PREVIEW_COLUMNS = ("name", "email", "phone", "don_vi", "to_chuc")
-M2_PREVIEW_HEADINGS = {"name": "Tên tài khoản", "email": "Email", "phone": "SĐT",
+M2_PREVIEW_COLUMNS = ("name", "email", "password", "phone", "don_vi", "to_chuc")
+M2_PREVIEW_HEADINGS = {"name": "Tên tài khoản", "email": "Email", "password": "Mật khẩu", "phone": "SĐT",
                         "don_vi": "Đơn vị", "to_chuc": "Tổ chức"}
 M2_SORTABLE = {"name": "name", "email": "email", "phone": "phone", "don_vi": "don_vi", "to_chuc": "to_chuc"}
 
@@ -484,12 +484,8 @@ class ContactExtractorGUI(tk.Tk):
         self.mode2_input_path = tk.StringVar()
         self.to_chuc_var = tk.StringVar()
 
-        # Font dạng monospace lập trình (giống phong cách Claude Code), có đầy đủ
-        # bộ ký tự tiếng Việt có dấu (nguyên âm đôi, dấu thanh, chữ Đ/đ...).
-        _CODE_FONT_STACK = ["Cascadia Code", "Cascadia Mono", "JetBrains Mono",
-                             "Fira Code", "Consolas", "Menlo", "SF Mono", "Courier New"]
-        self.base_font_family = _pick_font(_CODE_FONT_STACK)
-        self.mono_font_family = _pick_font(_CODE_FONT_STACK)
+        self.base_font_family = _pick_font(["Segoe UI", "Helvetica Neue", "Helvetica", "Arial"])
+        self.mono_font_family = _pick_font(["Cascadia Mono", "Consolas", "Menlo", "Courier New"])
 
         self._setup_style()
         self._build_widgets()
@@ -755,11 +751,14 @@ class ContactExtractorGUI(tk.Tk):
         ttk.Button(row_tpl, text="...", width=3, style="Secondary.TButton",
                    command=self.choose_template).pack(side="left", padx=(6, 0))
 
-        # -- rieng CHE DO 1: mat khau mac dinh --
-        self.m1_password_frame = tk.Frame(body2, bg=COLOR_CARD)
-        ttk.Label(self.m1_password_frame, text="Mật khẩu mặc định:", style="Card.TLabel").pack(anchor="w")
+        # -- Mat khau mac dinh: DUNG CHUNG cho ca 2 che do (truoc day chi
+        # rieng che do 1 - gio ca che do 2 cung dung, vi da them tuy chon
+        # dien Mat khau vao ket qua Che do 2 thay vi luon de trong) --
+        self.password_frame = tk.Frame(body2, bg=COLOR_CARD)
+        ttk.Label(self.password_frame, text="Mật khẩu mặc định:", style="Card.TLabel").pack(anchor="w")
         self.password_var = tk.StringVar(value=core.DEFAULT_PASSWORD)
-        ttk.Entry(self.m1_password_frame, textvariable=self.password_var).pack(fill="x", pady=(4, 10))
+        ttk.Entry(self.password_frame, textvariable=self.password_var).pack(fill="x", pady=(4, 10))
+        self.password_frame.pack(fill="x")
 
         # -- rieng CHE DO 2: to chuc mac dinh --
         self.m2_to_chuc_frame = tk.Frame(body2, bg=COLOR_CARD)
@@ -807,7 +806,8 @@ class ContactExtractorGUI(tk.Tk):
         )
 
         def m2_row_to_values(rec):
-            return (rec["name"], rec["email"], rec["phone"], rec["don_vi"], rec["to_chuc"])
+            password = self.password_var.get() or core.DEFAULT_PASSWORD
+            return (rec["name"], rec["email"], password, rec["phone"], rec["don_vi"], rec["to_chuc"])
 
         def m2_issue_row_to_values(issue):
             return (issue.get("stt", ""), issue.get("raw_name", ""), issue.get("raw_email", ""),
@@ -828,14 +828,12 @@ class ContactExtractorGUI(tk.Tk):
         # An het truoc, roi hien dung phan
         self.m1_file_frame.pack_forget()
         self.m2_file_frame.pack_forget()
-        self.m1_password_frame.pack_forget()
         self.m2_to_chuc_frame.pack_forget()
         self.panel_m1.pack_forget()
         self.panel_m2.pack_forget()
 
         if mode == "mode1":
             self.m1_file_frame.pack(fill="both", expand=True)
-            self.m1_password_frame.pack(fill="x")
             self.panel_m1.pack()
             default_tpl = os.path.join(THIS_DIR, "cls_template_users.xlsx")
         else:
@@ -845,7 +843,7 @@ class ContactExtractorGUI(tk.Tk):
             default_tpl = os.path.join(THIS_DIR, "TemplateV2.xlsx")
 
         # Dam bao checkbox "loai trung email" LUON nam SAU cung trong the 2,
-        # bat ke frame nao (mat khau / to chuc) vua duoc pack o tren.
+        # bat ke frame nao (to chuc, che do 2) vua duoc pack o tren.
         self.dedupe_check.pack_forget()
         self.dedupe_check.pack(anchor="w")
 
@@ -1088,9 +1086,9 @@ class ContactExtractorGUI(tk.Tk):
         self.status_var.set("Đang xuất tệp...")
         self.progress.start(12)
 
+        password = self.password_var.get() or core.DEFAULT_PASSWORD
         mode = self.mode_var.get()
         if mode == "mode1":
-            password = self.password_var.get() or core.DEFAULT_PASSWORD
             thread = threading.Thread(
                 target=self._export_worker_mode1,
                 args=(panel.records, template_path, output_path, password), daemon=True,
@@ -1098,7 +1096,7 @@ class ContactExtractorGUI(tk.Tk):
         else:
             thread = threading.Thread(
                 target=self._export_worker_mode2,
-                args=(panel, panel.records, panel.stats.get("issues", []), template_path, output_path),
+                args=(panel, panel.records, panel.stats.get("issues", []), template_path, output_path, password),
                 daemon=True,
             )
         thread.start()
@@ -1110,9 +1108,9 @@ class ContactExtractorGUI(tk.Tk):
         except Exception as e:
             self.after(0, self._on_export_error, str(e))
 
-    def _export_worker_mode2(self, panel, records, issues, template_path, output_path):
+    def _export_worker_mode2(self, panel, records, issues, template_path, output_path, password):
         try:
-            v2.write_v2_output(records, template_path, output_path)
+            v2.write_v2_output(records, template_path, output_path, password=password)
             issues_path = None
             if issues:
                 base, _ext = os.path.splitext(output_path)
