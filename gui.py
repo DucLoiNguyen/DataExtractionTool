@@ -45,21 +45,23 @@ import process_template_v2 as v2
 
 THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 
+# .doc (Word 97-2003) duoc ho tro qua LibreOffice (xem core._convert_via_libreoffice)
+# - phai co trong bo loc, neu khong nguoi dung khong thay tep .doc trong hop thoai.
 MODE1_INPUT_FILETYPES = [
-    ("Tất cả tệp hỗ trợ", "*.pdf *.docx *.xlsx *.xls *.csv"),
-    ("PDF", "*.pdf"), ("Word", "*.docx"), ("Excel", "*.xlsx *.xls"),
+    ("Tất cả tệp hỗ trợ", "*.pdf *.docx *.doc *.xlsx *.xls *.csv"),
+    ("PDF", "*.pdf"), ("Word", "*.docx *.doc"), ("Excel", "*.xlsx *.xls"),
     ("CSV", "*.csv"), ("Tất cả tệp", "*.*"),
 ]
 MODE2_INPUT_FILETYPES = [
-    ("Tất cả tệp hỗ trợ", "*.xlsx *.xls *.pdf *.docx *.csv"),
-    ("Excel", "*.xlsx *.xls"), ("PDF", "*.pdf"), ("Word", "*.docx"),
+    ("Tất cả tệp hỗ trợ", "*.xlsx *.xls *.pdf *.docx *.doc *.csv"),
+    ("Excel", "*.xlsx *.xls"), ("PDF", "*.pdf"), ("Word", "*.docx *.doc"),
     ("CSV", "*.csv"), ("Tất cả tệp", "*.*"),
 ]
 EXCEL_FILETYPES = [("Excel", "*.xlsx"), ("Tất cả tệp", "*.*")]
 
 PREVIEW_LIMIT = 200
 
-FILE_ICONS = {".pdf": "\U0001F4D5", ".docx": "\U0001F4D8", ".xlsx": "\U0001F4D7",
+FILE_ICONS = {".pdf": "\U0001F4D5", ".docx": "\U0001F4D8", ".doc": "\U0001F4D8", ".xlsx": "\U0001F4D7",
               ".xls": "\U0001F4D7", ".csv": "\U0001F4C4"}
 
 # ----- Cot cho CHE DO 1 -----
@@ -290,7 +292,7 @@ class ResultPanel:
 
     # ------------------------------------------------------------------
     def set_stats_placeholder(self, text=None):
-        self.stats_text.config(state="normal")
+        self.stats_text.config(state="normal", height=3)
         self.stats_text.delete("1.0", tk.END)
         self.stats_text.insert(
             tk.END, text or 'Chưa có dữ liệu. Hãy bấm "Trích xuất & Xem trước" (hoặc nhấn Enter).', "arrow"
@@ -304,6 +306,15 @@ class ResultPanel:
         self.stats_text.delete("1.0", tk.END)
         for text, tag in segments:
             self.stats_text.insert(tk.END, text, tag)
+        # Gian chieu cao theo so dong hien thi (dong canh bao them vao cuoi
+        # khong duoc bi an mat).
+        try:
+            self.stats_text.update_idletasks()
+            lines = self.stats_text.count("1.0", "end", "displaylines")
+            n = lines[0] if isinstance(lines, tuple) else lines
+            self.stats_text.config(height=max(3, int(n or 3)))
+        except (tk.TclError, TypeError, ValueError):
+            pass
         self.stats_text.config(state="disabled")
 
     def reset(self):
@@ -678,6 +689,7 @@ class ContactExtractorGUI(tk.Tk):
         self.log_text.pack(fill="both", expand=True)
         self.log_text.tag_configure("ok", foreground=COLOR_CONSOLE_OK)
         self.log_text.tag_configure("err", foreground="#e08a72")
+        self.log_text.tag_configure("warn", foreground="#e3b567")
 
     def _on_mode_tab_changed(self, event=None):
         if not self._ui_ready:
@@ -931,7 +943,9 @@ class ContactExtractorGUI(tk.Tk):
     def log(self, message):
         key = _search_key(message)
         tag = None
-        if "loi" in key or "!!" in message:
+        if key.startswith("canh bao"):
+            tag = "warn"
+        elif "loi" in key or "!!" in message:
             tag = "err"
         elif "da ghi" in key or "->" in message or "hoan tat" in key:
             tag = "ok"
@@ -959,7 +973,23 @@ class ContactExtractorGUI(tk.Tk):
             (f"-{_fmt(stats['duplicates_removed'])} trùng email", "danger"),
             ("  \u2192  ", "arrow"),
             (f"{_fmt(stats['final_count'])} dòng kết quả", "final"),
-        ]
+        ] + self._warning_segments(stats)
+
+    @staticmethod
+    def _warning_segments(stats):
+        """Dong nhac canh bao/khoi phuc STT duoi pipeline. Noi dung chi tiet
+        da duoc in ra Nhat ky (print_warnings). Can hien ro vi '0 loi' khong
+        co nghia la dung - STT nhay so / ca cot trong la dau hieu mat du lieu."""
+        segs = []
+        recovered = stats.get("recovered_stts") or []
+        warnings = stats.get("warnings") or []
+        if recovered:
+            segs.append((f"\n♻ Đã khôi phục {len(recovered)} dòng bị bỏ sót khi đọc PDF "
+                         "(xem Nhật ký xử lý).", "neutral"))
+        if warnings:
+            segs.append((f"\n⚠ {len(warnings)} cảnh báo cần đối chiếu tệp gốc "
+                         "(STT nhảy số / cột trống) - xem Nhật ký xử lý bên dưới.", "warn"))
+        return segs
 
     def _mode2_pipeline_segments(self, stats):
         missing_invalid = sum(1 for i in stats["issues"]
@@ -972,7 +1002,7 @@ class ContactExtractorGUI(tk.Tk):
             (f"-{_fmt(stats['duplicates_removed'])} trùng email", "danger"),
             ("  \u2192  ", "arrow"),
             (f"{_fmt(stats['final_count'])} dòng kết quả", "final"),
-        ]
+        ] + self._warning_segments(stats)
 
     # ------------------------------------------------------------------
     # BUOC 1: TRICH XUAT

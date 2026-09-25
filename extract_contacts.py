@@ -117,8 +117,9 @@ HEADER_KEYWORDS = {
     "email": [
         "email", "e-mail", "mail",
         "thu dien tu", "hop thu dien tu", "dia chi email", "dia chi mail",
+        "thu cong vu", "dia chi thu",
     ],
-    "phone": ["dien thoai", "sdt", "so dien thoai", "phone", "hotline", "tel"],
+    "phone": ["dien thoai", "sdt", "so dien thoai", "phone", "hotline", "tel", "di dong", "mobile"],
     "name": ["ho va ten", "ho ten", "ten tai khoan", "ten", "full name", "name", "hoten"],
     "password": ["mat khau", "password", "pass", "mk"],
 }
@@ -205,19 +206,69 @@ def match_header_field(header_text: str):
 # 2. CHUAN HOA DU LIEU (3 QUY TAC)
 # ---------------------------------------------------------------------------
 
+def _has_empty_email_label(email):
+    """True neu email co 1 'nhan' (label - phan giua 2 dau cham, hoac giua
+    @ va dau cham/ky tu ke tiep) RONG - vd '@.domain' (nhan dau tien cua
+    domain rong), 'domain..com' (2 dau cham lien tiep = 1 nhan rong o
+    giua), 'ten.@domain' (nhan cuoi cua phan ten rong)."""
+    if ".." in email:
+        return True
+    local, _, domain = email.partition("@")
+    if not local or local.startswith(".") or local.endswith("."):
+        return True
+    if not domain or domain.startswith(".") or domain.endswith("."):
+        return True
+    return False
+
+
+def _repair_email_typos(text):
+    """Tu dong sua 1 so LOI GO PHIM PHO BIEN trong email (CHI loai bo/thay
+    the ky tu THUA hoac SAI VI TRI ro rang, KHONG doan/them NOI DUNG MOI
+    - vd KHONG tu dien them phan ten mien bi thieu hoan toan):
+      - Thay dau phay (,) bang dau cham (.) - loi go nham phim ke nhau
+        tren ban phim (vd '@gmail,com' -> '@gmail.com').
+      - Gop nhieu dau cham lien tiep ('..', '...') thanh 1 dau cham (vd
+        'ten..donvi@...' -> 'ten.donvi@...').
+      - Bo dau cham NGAY SAU '@' (vd '@.domain' -> '@domain').
+      - Bo dau cham NGAY TRUOC '@' (vd 'ten.@domain' -> 'ten@domain').
+    Tra ve chuoi da sua (co the van chua hop le neu co loi khac loai nay,
+    vd thieu han '@' hoac thieu ca 1 doan ten mien - nhung truong hop do
+    KHONG the tu sua an toan nen se van bi loai o buoc kiem tra sau)."""
+    text = text.replace(",", ".")
+    text = re.sub(r"\.{2,}", ".", text)
+    text = re.sub(r"@\.+", "@", text)
+    text = re.sub(r"\.+@", "@", text)
+    return text
+
+
 def normalize_email(raw):
     """Tra ve email hop le, viet thuong; None neu khong hop le / rong.
     Bo TOAN BO khoang trang/xuong dong truoc khi tim, vi PDF/Word co the
     ngat dong GIUA 1 dia chi email dai (vd trong 1 o bang bi wrap chu),
     lam email bi tach thanh 2 dong va regex email se bat thieu neu khong
-    noi lai truoc."""
+    noi lai truoc.
+
+    Neu ket qua tim duoc CO NHAN RONG (vd '@.domain', 'ten..donvi@...')
+    HOAC khong tim thay ket qua nao ca (vd dau phay lam vo cau truc, '@gmail,com'
+    khien regex khong nhan ra duoc tu dau) - THU SUA cac loi go phim pho
+    bien qua _repair_email_typos() roi tim lai TREN TOAN BO chuoi da sua,
+    truoc khi ket luan la khong hop le. Day la SUA LOI GO PHIM RO RANG
+    (thua/sai vi tri 1 ky tu), KHONG PHAI tu doan/them noi dung email bi
+    thieu hoan toan (vd khong the tu dien ten mien neu no bi mat han)."""
     if not raw:
         return None
     raw = re.sub(r"\s+", "", str(raw))
+
     match = EMAIL_REGEX.search(raw)
-    if not match:
-        return None
-    return match.group(0).lower()
+    if match and not _has_empty_email_label(match.group(0)):
+        return match.group(0).lower()
+
+    repaired = _repair_email_typos(raw)
+    match2 = EMAIL_REGEX.search(repaired)
+    if match2 and not _has_empty_email_label(match2.group(0)):
+        return match2.group(0).lower()
+
+    return None
 
 
 def normalize_phone(raw):
@@ -242,6 +293,11 @@ def normalize_phone(raw):
     raw = raw.strip()
     if not raw:
         return ""
+    # So Excel da bi ep thanh chuoi o dau do (vd "912345678.0" - CSV xuat tu
+    # Excel, hoac code goi str() truoc khi truyen vao): bo duoi ".0" truoc,
+    # neu khong phan "0" thua se bi gop vao thanh 10 chu so sai va mat SDT.
+    if re.fullmatch(r"\+?\d+\.0+", raw):
+        raw = raw.split(".")[0]
 
     def _finalize(cleaned: str):
         if cleaned.startswith("+84"):
@@ -305,6 +361,144 @@ ISSUE_REASON_LABELS = {
 }
 
 
+# ---------------------------------------------------------------------------
+# 2b. STT (so thu tu) - DUNG CHUNG CHO CA 2 CHE DO
+#     Dung de (1) hien STT GOC trong tab "Can kiem tra" (nguoi dung tra nguoc
+#     lai tep nguon), (2) phat hien STT bi "nhay so" - dau hieu MAT DONG AM
+#     THAM (pdfplumber bo sot ca 1 dong khi tach bang, vd Ta Phin mat STT
+#     23/40/55/79) hoac nguon danh so sai (vd Dong Thap: 2315 go nham 2015).
+# ---------------------------------------------------------------------------
+
+_STT_HEADERS = {"stt", "tt", "so tt", "so thu tu", "thu tu"}
+_ROMAN_GROUP_RE = re.compile(r"^[IVXLC]{1,6}\.?$")
+
+# Dong van ban tho bat dau bang STT (vd "23 Nguyen Van A ...").
+LEADING_STT_LINE_RE = re.compile(r"^\s*(\d{1,4})\s+(.+)$")
+
+# Cac tu bat dau pho bien cua ten don vi/phong ban tieng Viet - dung de
+# tach "Ten - Don vi" khi ca 2 bi dinh lien trong van ban tho (khong con
+# ranh gioi cot) khi khoi phuc dong bi mat.
+UNIT_KEYWORD_SPLIT_RE = re.compile(
+    r"\b(?:Văn phòng|Ban(?:\s|$)|UBND|HĐND|Ủy ban|Phòng|Trung tâm|Hội(?:\s|$)|"
+    r"Đoàn|Sở|Viện|Cơ quan|Đảng ủy)",
+    re.IGNORECASE,
+)
+
+# Chuc vu hay dung lien sau ten trong van ban tho (vd Dong Thap: "Nguyen
+# Thi A Chuyen vien Phong Van hoa..."). CHI dung cum 2 tu tro len de khong
+# cat nham ten nguoi (vd ten "Chuyen" don le van giu).
+POSITION_SPLIT_RE = re.compile(
+    r"\b(?:Chuyên viên|Phó\s+(?:Chủ tịch|Trưởng|Giám đốc|Bí thư|Chánh|phòng)|"
+    r"Trưởng\s+(?:phòng|ban|khoa)|Giám đốc|Chủ tịch|Bí thư|Công chức|Viên chức|"
+    r"Cán bộ|Nhân viên|Kế toán|Văn thư)",
+    re.IGNORECASE,
+)
+
+
+def is_stt_header(cell):
+    """True neu o tieu de la cot STT ('STT', 'TT', 'Stt', 'Số TT'...)."""
+    norm = re.sub(r"[^a-z0-9 ]", "", _strip_accents_lower(cell)).strip()
+    return norm in _STT_HEADERS
+
+
+def parse_stt(value):
+    """Tra ve STT dang so nguyen (int) hoac None. Chap nhan float tu Excel
+    (1.0 -> 1) va chuoi so ('12', '12.')."""
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return int(value) if float(value).is_integer() and value > 0 else None
+    s = str(value).strip().rstrip(".")
+    return int(s) if s.isdigit() and 0 < int(s) < 100000 else None
+
+
+def is_group_stt(value):
+    """True neu o STT rong hoac la so La Ma (I, II, III...) - dau hieu cua
+    dong TIEU DE NHOM, khong phai dong du lieu 1 nguoi."""
+    s = "" if value is None else str(value).strip()
+    return s == "" or bool(_ROMAN_GROUP_RE.match(s))
+
+
+def find_stt_gaps(stts):
+    """Tra ve danh sach STT bi thieu trong day 1..max(stts)."""
+    stts = set(stts)
+    if not stts:
+        return []
+    return [n for n in range(1, max(stts) + 1) if n not in stts]
+
+
+def find_stt_lines(full_text, wanted):
+    """Tim trong van ban tho (dong theo dong) dong BAT DAU bang tung STT
+    trong `wanted`, gop them toi da 2 dong ke tiep (phong khi bi xuong dong
+    giua chung). Tra ve {stt: chuoi_da_gop} cho cac STT tim thay."""
+    if not full_text or not wanted:
+        return {}
+    wanted = set(wanted)
+    lines = full_text.split("\n")
+    found = {}
+    for i, line in enumerate(lines):
+        m = LEADING_STT_LINE_RE.match(line)
+        if not m:
+            continue
+        num = int(m.group(1))
+        if num in wanted and num not in found:
+            combined = m.group(2)
+            for j in range(1, 3):
+                if i + j < len(lines):
+                    nxt = lines[i + j].strip()
+                    if nxt and not LEADING_STT_LINE_RE.match(nxt):
+                        combined += " " + nxt
+                    else:
+                        break
+            found[num] = combined
+    return found
+
+
+def split_recovered_stt_line(combined):
+    """Tach 1 dong van ban tho da khoi phuc thanh cac phan. Tra ve dict
+    {email, phone, name, unit} (email/phone la chuoi THO tim bang regex,
+    None neu khong co; unit la None neu khong tach duoc). Ten = phan truoc
+    email, cat tai tu khoa don vi (UNIT_KEYWORD_SPLIT_RE) roi tai chuc vu
+    (POSITION_SPLIT_RE) neu co."""
+    email_m = EMAIL_REGEX.search(combined)
+    phone_m = re.search(r"(?:\+?84|0)\d{8,10}", combined.replace(" ", ""))
+    name_part = combined[:email_m.start()] if email_m else combined
+    name_part = name_part.strip(" \t-|/,;:")
+    unit = None
+    m_unit = UNIT_KEYWORD_SPLIT_RE.search(name_part)
+    if m_unit and m_unit.start() > 0:
+        unit = name_part[m_unit.start():].strip(" \t-|/,;:")
+        name_part = name_part[:m_unit.start()].strip(" \t-|/,;:")
+    m_pos = POSITION_SPLIT_RE.search(name_part)
+    if m_pos and m_pos.start() > 0:
+        name_part = name_part[:m_pos.start()].strip(" \t-|/,;:")
+    return {
+        "email": email_m.group(0) if email_m else None,
+        "phone": phone_m.group(0) if phone_m else None,
+        "name": name_part,
+        "unit": unit,
+    }
+
+
+def format_stt_list(nums, limit=15):
+    """'23, 40, 55' - cat bot neu qua dai (dung cho thong bao canh bao)."""
+    nums = sorted(nums)
+    text = ", ".join(str(n) for n in nums[:limit])
+    return text + (f"... (tổng {len(nums)})" if len(nums) > limit else "")
+
+
+def add_warning(row_stats, message):
+    """Ghi 1 canh bao (chuoi co dau, hien cho nguoi dung) vao row_stats.
+    Canh bao KHAC 'issue': khong gan voi 1 nguoi cu the ma la dau hieu co
+    the MAT DU LIEU AM THAM (STT nhay so, ca cot SDT trong...) - '0 loi'
+    khong co nghia la dung."""
+    if row_stats is None:
+        return
+    warnings = row_stats.setdefault("warnings", [])
+    if message not in warnings:
+        warnings.append(message)
+
+
 def build_clean_record(raw_email, raw_name, raw_phone, row_stats=None, row_context=None):
     """Ap dung 3 quy tac; tra ve dict hoac None neu bi bo qua (thieu/sai email).
     Neu duoc truyen row_stats (dict dem so lieu, dung cho thong ke), se cong
@@ -354,7 +548,7 @@ def build_clean_record(raw_email, raw_name, raw_phone, row_stats=None, row_conte
 # 3. DOC DU LIEU DANG BANG (Excel / CSV / bang trong Word / PDF)
 # ---------------------------------------------------------------------------
 
-def merge_wrapped_continuation_rows(rows, name_col_idx):
+def merge_wrapped_continuation_rows(rows, name_col_idx, stt_col_idx=None):
     """
     Xu ly truong hop 1 O BI NGAT DONG giua chung (thuong gap o cot Email/
     Chuc vu khi noi dung dai, hoac khi dong roi vao ranh gioi trang PDF),
@@ -369,6 +563,9 @@ def merge_wrapped_continuation_rows(rows, name_col_idx):
     nhat 1 o khac co du lieu). Khi do, NOI TRUC TIEP (khong them khoang
     trang - vi thuong la ngat GIUA 1 tu/dia chi) noi dung cac o cua dong
     nay vao CUOI o tuong ung cua dong TRUOC, roi loai hoan toan dong nay.
+
+    stt_col_idx: KHONG noi o STT (Dong Thap danh STT ca cho dong bi xuong
+    hang, vd 909 + 910 'dongthap.gov.vn' -> truoc day o STT thanh '909910').
     """
     if not rows or name_col_idx is None:
         return rows
@@ -383,6 +580,8 @@ def merge_wrapped_continuation_rows(rows, name_col_idx):
         if merged and name_is_empty and has_any_data:
             prev = merged[-1]
             for idx in range(min(len(prev), len(row))):
+                if idx == stt_col_idx:
+                    continue
                 cell = row[idx]
                 if cell and str(cell).strip():
                     prev[idx] = (str(prev[idx]).strip() if prev[idx] else "") + str(cell).strip()
@@ -416,37 +615,180 @@ def find_header_row(rows, max_scan=15):
     return None, None
 
 
-def extract_from_table_rows(rows, row_stats=None, source_label=""):
+_EMAIL_TAIL_RE = re.compile(r"[A-Za-z0-9.\-]{1,15}")
+_PHONE_ONLY_CELL_RE = re.compile(r"[\d\s.+\-()]{9,20}")
+
+
+def _cell_str(value):
+    if value is None:
+        return ""
+    if isinstance(value, float) and value.is_integer():
+        return str(int(value))
+    return str(value).strip()
+
+
+def _find_email_in_row(row, email_idx, skip_idxs=()):
+    """Tim email cua 1 dong: uu tien cot Email; neu cot do KHONG co email
+    hop le thi tim THEO NOI DUNG o cac o khac. Tra ve (gia_tri_tho, idx);
+    idx = None neu phai ghep 2 o. Neu khong tim thay, tra ve gia tri cot
+    Email goc (de ghi dung du lieu goc vao "Can kiem tra").
+
+    Ly do (da gap thuc te, Dong Thap STT 742): PDF bi LECH COT - cot Email
+    chua SDT '919.099.499', con email nam o cot SDT va bi pdfplumber CAT
+    DOI sang o ke ben ('hoquanglon@gmail.c' + 'om'). Doc theo vi tri cot co
+    dinh se loai nham nguoi nay.
+
+    Chi GHEP 2 o khi o sau la 1 doan ngan toan ky tu email (vd 'om', 'vn',
+    'gov.vn') VA ket qua ghep moi hop le - khong bao gio doan/them noi dung.
+    Email thieu '@' hoac thieu ten mien (vd 'nvgiang') van bi loai."""
+    primary = row[email_idx] if email_idx is not None and email_idx < len(row) else None
+    if normalize_email(primary):
+        return primary, email_idx
+
+    for i, cell in enumerate(row):
+        if i == email_idx or i in skip_idxs:
+            continue
+        s = _cell_str(cell)
+        if "@" in s and normalize_email(s):
+            return cell, i
+
+    for i in range(len(row) - 1):
+        a, b = _cell_str(row[i]), _cell_str(row[i + 1])
+        if "@" in a and not normalize_email(a) and _EMAIL_TAIL_RE.fullmatch(b):
+            if normalize_email(a + b):
+                return a + b, None
+
+    return primary, email_idx
+
+
+def _find_phone_in_row(row, phone_idx, email_used_idx, email_idx, skip_idxs=()):
+    """Tim SDT cua 1 dong: uu tien cot SDT. CHI tim sang o khac khi co dau
+    hieu LECH COT (email lay tu cot khac cot Email, hoac cot SDT co noi
+    dung nhung khong phai SDT) - tranh vo tinh lay 1 con so khong phai SDT
+    (vd o Ghi chu) cho nguoi de trong SDT."""
+    primary = row[phone_idx] if phone_idx is not None and phone_idx < len(row) else None
+    if normalize_phone(primary):
+        return primary
+    shifted = (email_used_idx != email_idx) or bool(_cell_str(primary))
+    if not shifted:
+        return primary
+    for i, cell in enumerate(row):
+        if i in (phone_idx, email_used_idx) or i in skip_idxs:
+            continue
+        s = _cell_str(cell)
+        if s and _PHONE_ONLY_CELL_RE.fullmatch(s) and normalize_phone(cell):
+            return cell
+    return primary
+
+
+# Ten nhom/co quan thuong mo dau bang cac tu nay. KHONG co "Đoàn" (la ho
+# nguoi, vd "Đoàn Văn Nỉ" o Dong Thap).
+_GROUP_UNIT_START_RE = re.compile(
+    r"^(?:Ủy ban|Uỷ ban|UBND|HĐND|Hội đồng|Sở|Ban|Trung tâm|Văn phòng|Phòng|Thanh tra|"
+    r"Viện|Cơ quan|Đảng ủy|Đảng uỷ|Trường|Bệnh viện|Chi cục|Cục|Tổng cục|Công an)(?:\s|$)",
+    re.IGNORECASE,
+)
+
+
+def _is_group_header_row(row, stt_idx, name_idx):
+    """Dong TIEU DE NHOM (vd Dong Thap: '| Ủy ban nhân dân Phường Lo | ng
+    Thuận |') - khong phai 1 nguoi, khong dua vao thong ke/"Can kiem tra".
+    CHI ap dung khi bang CO cot STT (nguoi that luon co STT): o STT rong/so
+    La Ma, co ten, khong co email/SDT o bat ky o nao, VA mot trong hai:
+      - cac o con lai gan nhu rong (<= 3 ky tu - pdfplumber hay cat vai chu
+        cuoi sang o ke ben), hoac
+      - o ten bat dau bang ten loai co quan (Ủy ban, Sở, Trung tâm...) - ten
+        nhom dai bi cat sang o ke ben ('Trung tâm Khởi nghiệp đổi' | 'mới
+        sáng tạo...'). Nguoi that khong STT/email/SDT nhung ten la ten nguoi
+        van vao "Can kiem tra" nhu truoc."""
+    if stt_idx is None or name_idx is None:
+        return False
+    stt_val = row[stt_idx] if stt_idx < len(row) else None
+    if not is_group_stt(stt_val):
+        return False
+    name_val = _cell_str(row[name_idx]) if name_idx < len(row) else ""
+    if not name_val:
+        return False
+    others = 0
+    for i, cell in enumerate(row):
+        s = _cell_str(cell)
+        if not s:
+            continue
+        if "@" in s or PHONE_CANDIDATE_REGEX.search(s) or _PHONE_ONLY_CELL_RE.fullmatch(s):
+            return False
+        if i not in (stt_idx, name_idx):
+            others += len(s)
+    return others <= 3 or bool(_GROUP_UNIT_START_RE.match(name_val))
+
+
+def extract_from_table_rows(rows, row_stats=None, source_label="", seen_stts=None, merge_wrapped=True):
     """
     rows: list cac list o. Tu dong TIM dong tieu de that su (xem
     find_header_row - co the khong phai dong 0 neu co vai dong tieu de van
     ban phia truoc) roi xac dinh cot nao la email / ten / dien thoai dua
     tren HEADER_KEYWORDS. Neu khong tim thay dong tieu de phu hop trong 15
-    dong dau, tra ve [].
+    dong dau, tra ve [] (va ghi canh bao neu bang co chua email).
 
     source_label: nhan mo ta nguon du lieu (vd "ten_file.xlsx" hoac
     "ten_file.xlsx [Sheet: Thang1]") - duoc ghi kem theo moi dong bi loai
     de nguoi dung biet CHINH XAC no thuoc tep/sheet nao (xem tab "Can kiem
     tra" tren giao dien).
+
+    seen_stts: set (tuy chon) - neu truyen vao, moi STT so nguyen doc duoc
+    (ca dong hop le lan bi loai) duoc them vao, de ham goi phat hien STT
+    bi nhay so (xem find_stt_gaps).
+
+    Neu bang co cot STT: "row_number" cua dong bi loai la STT GOC trong tep
+    (nguoi dung tra nguoc duoc), khong phai so thu tu tu dem.
+
+    merge_wrapped: chi True cho PDF/Word (o bi ngat dong). Excel/CSV truyen
+    False - dong thieu ten trong Excel la loi du lieu THAT, ghep nham se
+    lam mat 1 nguoi (da gap o Che do 2, file Can Tho).
     """
     if not rows:
         return []
 
     header_idx, col_map = find_header_row(rows)
     if header_idx is None:
-        return []  # khong nhan dien duoc cot email trong pham vi quet -> bo qua
+        # Bang co email nhung khong nhan ra tieu de cot -> ca bang bi bo qua.
+        # Truoc day im lang; nay canh bao de nguoi dung kiem tra tieu de cot.
+        n_email_rows = sum(1 for r in rows if r and any("@" in _cell_str(c) for c in r))
+        if n_email_rows:
+            add_warning(row_stats, f"{source_label}: có 1 bảng ({n_email_rows} dòng chứa email) "
+                                   "không nhận diện được tiêu đề cột Email nên bị bỏ qua. "
+                                   "Hãy kiểm tra tiêu đề cột.")
+        return []
+
+    header = rows[header_idx]
+    stt_idx = next((i for i, c in enumerate(header) if is_stt_header(c)), None)
+    name_idx = col_map.get("name")
+    skip_idxs = {i for i in (stt_idx, name_idx) if i is not None}
 
     data_rows = rows[header_idx + 1:]
+    # Ghi nhan STT cua MOI dong TRUOC khi gop dong bi ngat - ke ca dong se
+    # bi gop vao dong tren (vd Dong Thap STT 910 chi chua duoi email cua
+    # 909). Chi STT VANG MAT HOAN TOAN khoi bang moi la dau hieu mat dong;
+    # neu khong, buoc khoi phuc STT se tao "nguoi ao" tu cac dong nay.
+    if seen_stts is not None and stt_idx is not None:
+        for r in data_rows:
+            if r and stt_idx < len(r):
+                n = parse_stt(r[stt_idx])
+                if n is not None:
+                    seen_stts.add(n)
     # Gop cac dong bi "gay" do PDF ngat dong giua o (xem
     # merge_wrapped_continuation_rows) TRUOC KHI xu ly tung dong, de khong
     # mat/sai du lieu (vd email bi cat lam doi) va khong tao ra "nguoi ao"
     # tu phan bi ngat.
-    data_rows = merge_wrapped_continuation_rows(data_rows, col_map.get("name"))
+    if merge_wrapped:
+        data_rows = merge_wrapped_continuation_rows(data_rows, name_idx, stt_idx)
 
     records = []
     row_number = 0
+    last_stt = None
     for row in data_rows:
         if row is None or all(c in (None, "") for c in row):
+            continue
+        if _is_group_header_row(row, stt_idx, name_idx):
             continue
         row_number += 1
 
@@ -456,12 +798,36 @@ def extract_from_table_rows(rows, row_stats=None, source_label=""):
                 return ""
             return row[idx] if row[idx] is not None else ""
 
-        row_context = {"source": source_label, "row_number": row_number}
-        rec = build_clean_record(get("email"), get("name"), get("phone"),
+        stt = parse_stt(row[stt_idx]) if stt_idx is not None and stt_idx < len(row) else None
+
+        raw_email, email_used_idx = _find_email_in_row(row, col_map.get("email"), skip_idxs)
+        raw_phone = _find_phone_in_row(row, col_map.get("phone"), email_used_idx,
+                                       col_map.get("email"), skip_idxs)
+
+        if stt is not None:
+            display_row = stt
+            last_stt = stt
+        elif stt_idx is not None:
+            # Bang co cot STT nhung dong nay khong co -> chi vi tri tuong doi,
+            # khong dung so tu dem (se trung/nham voi STT that cua dong khac).
+            display_row = f"sau STT {last_stt}" if last_stt is not None else "đầu bảng"
+        else:
+            display_row = row_number
+        row_context = {"source": source_label, "row_number": display_row, "stt": stt}
+        rec = build_clean_record(raw_email or "", get("name"), raw_phone if raw_phone is not None else "",
                                   row_stats=row_stats, row_context=row_context)
         if rec:
             records.append(rec)
     return records
+
+
+def warn_stt_gaps(seen_stts, row_stats, source_label, missing=None):
+    """Ghi canh bao neu STT bi nhay so (dau hieu mat dong / nguon danh so sai)."""
+    missing = find_stt_gaps(seen_stts) if missing is None else missing
+    if missing:
+        add_warning(row_stats, f"{source_label}: STT bị nhảy số ({format_stt_list(missing)}) - "
+                               "không tìm thấy các dòng này. Hãy đối chiếu tệp gốc "
+                               "(có thể nguồn đánh số sai, hoặc dòng bị mất khi đọc).")
 
 
 def _row_matches_known_header(row, header_row):
@@ -602,7 +968,10 @@ def read_xls_file(path, row_stats=None, source_label=None):
             while rows and all(c in (None, "") for c in rows[0]):
                 rows.pop(0)
             sheet_label = f"{base_label} [Sheet: {sheet.name}]"
-            all_records.extend(extract_from_table_rows(rows, row_stats=row_stats, source_label=sheet_label))
+            seen = set()
+            all_records.extend(extract_from_table_rows(rows, row_stats=row_stats, source_label=sheet_label,
+                                                       seen_stts=seen, merge_wrapped=False))
+            warn_stt_gaps(seen, row_stats, sheet_label)
         return all_records
     except Exception as xlrd_error:
         converted_path = _convert_xls_via_libreoffice(path)
@@ -671,7 +1040,10 @@ def read_excel_file(path, row_stats=None, source_label=None):
         while rows and all(c in (None, "") for c in rows[0]):
             rows.pop(0)
         sheet_label = f"{base_label} [Sheet: {ws.title}]" if len(wb.worksheets) > 1 else base_label
-        all_records.extend(extract_from_table_rows(rows, row_stats=row_stats, source_label=sheet_label))
+        seen = set()
+        all_records.extend(extract_from_table_rows(rows, row_stats=row_stats, source_label=sheet_label,
+                                                   seen_stts=seen, merge_wrapped=False))
+        warn_stt_gaps(seen, row_stats, sheet_label)
     return all_records
 
 
@@ -680,7 +1052,11 @@ def read_csv_file(path, row_stats=None, source_label=None):
     with open(path, newline="", encoding="utf-8-sig", errors="ignore") as f:
         reader = csv.reader(f)
         rows = list(reader)
-    return extract_from_table_rows(rows, row_stats=row_stats, source_label=label)
+    seen = set()
+    records = extract_from_table_rows(rows, row_stats=row_stats, source_label=label, seen_stts=seen,
+                                      merge_wrapped=False)
+    warn_stt_gaps(seen, row_stats, label)
+    return records
 
 
 # ---------------------------------------------------------------------------
@@ -751,8 +1127,11 @@ def read_docx_file(path, row_stats=None, source_label=None):
             [[_full_cell_text(cell) for cell in row.cells] for row in table.rows]
             for table in document.tables
         ]
+        seen = set()
         for logical_table in merge_multi_page_tables(raw_tables):
-            records.extend(extract_from_table_rows(logical_table, row_stats=row_stats, source_label=label))
+            records.extend(extract_from_table_rows(logical_table, row_stats=row_stats, source_label=label,
+                                                   seen_stts=seen))
+        warn_stt_gaps(seen, row_stats, label)
 
         # 4b. Van ban tu do (paragraph) - gom theo tung "khoi" ban ghi. Cung dung
         # _full_paragraph_text de khong bo sot noi dung trong hyperlink.
@@ -783,20 +1162,69 @@ def read_pdf_file(path, row_stats=None, source_label=None):
                            # trung/nhieu 2 lan tren cung 1 du lieu bang (vd
                            # ten bi tach doi, email bi sai do doan van suy
                            # doan nham khi PDF ngat dong giua o bang).
+    page_texts = []  # van ban tho MOI trang - chi dung de khoi phuc STT bi mat
     with pdfplumber.open(path) as pdf:
         for page in pdf.pages:
             page_tables = page.extract_tables() or []
+            page_text = page.extract_text() or ""
+            page_texts.append(page_text)
             if page_tables:
                 raw_tables.extend(page_tables)
             else:
-                free_text_parts.append(page.extract_text() or "")
+                free_text_parts.append(page_text)
 
+    seen = set()
     for logical_table in merge_multi_page_tables(raw_tables):
-        records.extend(extract_from_table_rows(logical_table, row_stats=row_stats, source_label=label))
+        records.extend(extract_from_table_rows(logical_table, row_stats=row_stats, source_label=label,
+                                               seen_stts=seen))
+    records = _recover_missing_stt_rows(records, seen, "\n".join(page_texts), row_stats, label)
 
     if free_text_parts:
         records.extend(extract_from_free_text("\n".join(free_text_parts), row_stats=row_stats, source_label=label))
 
+    return records
+
+
+def _recover_missing_stt_rows(records, seen_stts, full_text, row_stats, source_label):
+    """Che do 1 - LUOI AN TOAN khi pdfplumber BO SOT HOAN TOAN 1 dong khi
+    tach bang (Ta Phin mat STT 23/40/55/79 - dong khong xuat hien trong
+    bang tach duoc chut nao). Cung co che voi Che do 2
+    (process_template_v2._recover_missing_stt_rows): do STT bi nhay so, tim
+    lai dong bat dau bang STT do trong van ban tho cua PDF.
+
+      - Tim thay dong -> xu ly nhu 1 dong du lieu binh thuong
+        (build_clean_record: co email hop le thi vao ket qua, khong thi vao
+        "Can kiem tra"), chen dung vi tri theo STT.
+      - Khong tim thay (vd Dong Thap: nguon danh so sai, 2315 go thanh
+        2015) -> KHONG bia dong nao, chi ghi CANH BAO de nguoi dung doi chieu.
+    Tra ve danh sach records moi."""
+    missing = find_stt_gaps(seen_stts)
+    if not missing:
+        return records
+    lines = find_stt_lines(full_text, missing)
+    not_found = [n for n in missing if n not in lines]
+
+    for num in missing:
+        combined = lines.get(num)
+        if not combined:
+            continue
+        parts = split_recovered_stt_line(combined)
+        row_context = {"source": source_label, "row_number": num, "stt": num}
+        rec = build_clean_record(parts["email"] or "", parts["name"], parts["phone"] or "",
+                                  row_stats=row_stats, row_context=row_context)
+        if rec:
+            pos = len(records)
+            for idx, r in enumerate(records):
+                ctx = r.get("_context") or {}
+                if ctx.get("source") == source_label and ctx.get("stt") is not None and ctx["stt"] > num:
+                    pos = idx
+                    break
+            records.insert(pos, rec)
+
+    recovered = [n for n in missing if n in lines]
+    if recovered and row_stats is not None:
+        row_stats.setdefault("recovered_stts", []).extend((source_label, n) for n in recovered)
+    warn_stt_gaps(seen_stts, row_stats, source_label, missing=not_found)
     return records
 
 
@@ -933,29 +1361,72 @@ def extract_from_file(path, row_stats=None):
     raise ValueError(f"Không hỗ trợ định dạng tệp: {ext} ({path})")
 
 
+def _ascii_lower(text):
+    text = str(text or "").replace("đ", "d").replace("Đ", "D")
+    text = unicodedata.normalize("NFD", text)
+    return "".join(c for c in text if unicodedata.category(c) != "Mn").lower()
+
+
+def email_name_match_score(name, email):
+    """Muc do KHOP giua ho ten va phan truoc @ cua email (0/1/2). Dung khi
+    2 nguoi dung CHUNG 1 email (loi nhap lieu o nguon): giu nguoi co ten
+    KHOP email hon, thay vi mac dinh giu nguoi xuat hien truoc - da gap
+    thuc te nguoi xuat hien truoc la nguoi DAN NHAM email cua nguoi sau
+    (vd 'Nguyễn Thị Thu Hà' dung 'hvluyen...' cua 'Hồ Văn Luyến').
+      2 = khop mau viet tat pho bien: chu cai dau ho/ten dem + ten
+          (vd 'hvluyen' cho 'Hồ Văn Luyến'), ten + chu cai dau
+          (vd 'luyenhv'), hoac ho ten viet lien (vd 'hovanluyen').
+      1 = chi chua ten (tu cuoi, >= 3 ky tu).
+      0 = khong khop."""
+    words = [w for w in re.split(r"[^a-z0-9]+", _ascii_lower(name)) if w]
+    if not words or not email or "@" not in email:
+        return 0
+    local = _ascii_lower(email.split("@")[0])
+    local_compact = re.sub(r"[^a-z0-9]", "", local)
+    first_seg = re.split(r"[._\-]", local)[0]
+    given = words[-1]
+    initials = "".join(w[0] for w in words[:-1])
+    patterns = {initials + given, given + initials, "".join(words)}
+    if first_seg in patterns or any(p and local_compact.startswith(p) for p in patterns):
+        return 2
+    if len(given) >= 3 and given in local_compact:
+        return 1
+    return 0
+
+
 def dedupe_by_email(records, row_stats=None):
-    """Loai ban ghi trung email (giu ban ghi xuat hien dau tien). Neu duoc
-    truyen row_stats, ghi lai CAC BAN GHI BI LOAI vao row_stats['issues']
-    (kem nguon/STT/du lieu goc) voi ly do 'duplicate_email', phuc vu tab
-    "Can kiem tra" - nguoi dung can biet ban ghi trung nam o dau, khong chi
-    biet CO trung."""
-    seen = set()
+    """Loai ban ghi trung email. Mac dinh giu ban ghi xuat hien dau tien,
+    NHUNG neu ban ghi sau co ten KHOP email ro rang hon (xem
+    email_name_match_score) thi GIU ban ghi sau va loai ban ghi truoc.
+    Ban ghi bi loai duoc ghi vao row_stats['issues'] (ly do
+    'duplicate_email') de hien o tab "Can kiem tra"."""
+    kept = {}      # email -> vi tri trong result
     result = []
+    dropped = []
     for r in records:
-        if r["email"] in seen:
-            if row_stats is not None:
-                ctx = r.get("_context") or {}
-                row_stats.setdefault("issues", []).append({
-                    "source": ctx.get("source", ""),
-                    "row_number": ctx.get("row_number"),
-                    "raw_email": r["email"],
-                    "raw_name": r["name"],
-                    "raw_phone": r["phone"],
-                    "reason": "duplicate_email",
-                })
+        email = r["email"]
+        if email in kept:
+            idx = kept[email]
+            current = result[idx]
+            if email_name_match_score(r["name"], email) > email_name_match_score(current["name"], email):
+                dropped.append(current)
+                result[idx] = r
+            else:
+                dropped.append(r)
             continue
-        seen.add(r["email"])
+        kept[email] = len(result)
         result.append(r)
+    if row_stats is not None:
+        for r in dropped:
+            ctx = r.get("_context") or {}
+            row_stats.setdefault("issues", []).append({
+                "source": ctx.get("source", ""),
+                "row_number": ctx.get("row_number"),
+                "raw_email": r["email"],
+                "raw_name": r["name"],
+                "raw_phone": r["phone"],
+                "reason": "duplicate_email",
+            })
     return result
 
 
@@ -1033,6 +1504,20 @@ def print_stats_report(stats):
     print(f"Số dòng bị loại - email sai định dạng:      {stats['invalid_email_format']}")
     print(f"Số dòng bị loại - trùng email:               {stats['duplicates_removed']}")
     print(f"Còn lại sau cùng (đã lọc trùng):            {stats['final_count']}")
+    print_warnings(stats.get("warnings"), stats.get("recovered_stts"))
+
+
+def print_warnings(warnings, recovered_stts=None):
+    """In cac dong khoi phuc duoc + canh bao (dung chung cho 2 che do)."""
+    if recovered_stts:
+        by_src = {}
+        for src, n in recovered_stts:
+            by_src.setdefault(src, []).append(n)
+        for src, nums in by_src.items():
+            print(f"Đã khôi phục STT {format_stt_list(nums)} từ văn bản gốc ({src}) - "
+                  "pdfplumber bỏ sót khi tách bảng.")
+    for w in warnings or []:
+        print(f"CẢNH BÁO: {w}")
 
 
 def extract_all(inputs, dedupe=True, verbose=True):
@@ -1058,6 +1543,13 @@ def extract_all(inputs, dedupe=True, verbose=True):
                                    duoc ghi vao file ket qua
         - per_file_counts:        so ban ghi hop le (truoc loc trung) theo
                                    tung file nguon
+        - issues:                 cac dong bi loai (tab "Can kiem tra")
+        - warnings:               canh bao dau hieu MAT DU LIEU AM THAM (STT
+                                   nhay so khong tim lai duoc, ca tep khong co
+                                   SDT, bang co email nhung khong nhan ra tieu
+                                   de...) - chuoi co dau, hien cho nguoi dung
+        - recovered_stts:         [(tep, stt)] cac dong PDF bi pdfplumber bo
+                                   sot da khoi phuc tu van ban tho
     """
     all_records = []
     per_file_counts = {}
@@ -1067,6 +1559,8 @@ def extract_all(inputs, dedupe=True, verbose=True):
         "missing_email": 0,
         "invalid_email_format": 0,
         "issues": [],
+        "warnings": [],
+        "recovered_stts": [],
     }
     for path in inputs:
         if verbose:
@@ -1076,11 +1570,17 @@ def extract_all(inputs, dedupe=True, verbose=True):
         except Exception as e:
             print(f"  !! Lỗi khi đọc {path}: {e}", file=sys.stderr)
             per_file_counts[path] = 0
+            add_warning(row_stats, f"{os.path.basename(path)}: không đọc được tệp ({e}).")
             continue
         if verbose:
             print(f"  -> Trích xuất được {len(recs)} bản ghi hợp lệ (có email)")
         per_file_counts[path] = len(recs)
         all_records.extend(recs)
+        # Ca tep khong co SDT nao -> gan nhu chac chan cot SDT khong duoc
+        # nhan dien (tieu de la hoac lech cot), khong phai nguon thieu that.
+        if len(recs) >= 3 and not any(r["phone"] for r in recs):
+            add_warning(row_stats, f"{os.path.basename(path)}: không có số điện thoại nào trong "
+                                   f"{len(recs)} bản ghi - kiểm tra tiêu đề cột SĐT.")
 
     total_extracted = len(all_records)
 
@@ -1106,6 +1606,8 @@ def extract_all(inputs, dedupe=True, verbose=True):
         "final_count": len(clean_final_records),
         "per_file_counts": per_file_counts,
         "issues": row_stats["issues"],
+        "warnings": row_stats["warnings"],
+        "recovered_stts": row_stats["recovered_stts"],
         # Giu lai 2 khoa cu de tuong thich nguoc voi code/GUI dang dung ten cu
         "total_extracted": total_extracted,
     }

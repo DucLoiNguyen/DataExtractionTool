@@ -8,21 +8,26 @@ loại dữ liệu đầu vào bạn có.
 ```
 📁 (thư mục này)
 ├── gui.py                       🖥️  CHẠY FILE NÀY — giao diện duy nhất
-├── extract_contacts.py          ⚙️  Logic dùng chung (KHÔNG chạy trực tiếp)
-├── process_template_v2.py       ⚙️  Logic riêng cho chế độ 2 (KHÔNG chạy trực tiếp)
+├── extract_contacts.py          ⚙️  Logic dùng chung + chế độ 1
+├── process_template_v2.py       ⚙️  Logic riêng cho chế độ 2
 ├── cls_template_users.xlsx      📄  File mẫu cho chế độ 1
 ├── TemplateV2.xlsx              📄  File mẫu cho chế độ 2
+├── regression.py                🧪  Kiểm tra hồi quy (dành cho người bảo trì)
 └── README.md                    📖  File này
 ```
 
-**Quan trọng**: cả 5 file trên phải luôn nằm **cùng 1 thư mục**. Chỉ cần chạy
-`gui.py` — không cần chạy 2 file logic kia trực tiếp.
+**Quan trọng**: `gui.py`, 2 file logic và 2 file mẫu phải luôn nằm **cùng 1
+thư mục**. Chỉ cần chạy `gui.py`.
 
 ## Cài đặt (chỉ cần làm 1 lần)
 
 ```bash
 pip install openpyxl python-docx pdfplumber xlrd
 ```
+
+Tuỳ chọn: cài [LibreOffice](https://www.libreoffice.org/) nếu cần đọc tệp Word
+cũ `.doc` (Word 97-2003). Không có LibreOffice thì mở tệp bằng Word, chọn
+"Save As" sang `.docx` rồi dùng tệp mới.
 
 ## Chạy
 
@@ -32,67 +37,95 @@ python3 gui.py
 
 ## Chọn chế độ
 
-Ngay khi mở tool, chọn 1 trong 2 chế độ ở đầu trang:
+Chọn 1 trong 2 tab ở đầu trang:
 
 | | Chế độ 1 | Chế độ 2 |
 |---|---|---|
-| **Dùng khi** | Có công văn/danh sách tự do dạng PDF, Word, Excel/CSV | Đã có bảng Excel với cột Họ tên/Đơn vị công tác/Email/SĐT |
-| **Đầu vào** | Nhiều tệp PDF/Word/Excel/CSV | 1 tệp Excel |
+| **Dùng khi** | Chỉ cần Email / Họ tên / SĐT | Cần thêm Đơn vị và Tổ chức |
+| **Đầu vào** | Nhiều tệp PDF, Word (.docx/.doc), Excel (.xlsx/.xls), CSV | 1 tệp PDF, Word (.docx/.doc), Excel (.xlsx/.xls) hoặc CSV |
 | **File mẫu** | `cls_template_users.xlsx` | `TemplateV2.xlsx` |
-| **Đầu ra** | Email, Mật khẩu, Họ và tên, Điện thoại | Tên tài khoản, Email, SĐT, Mật khẩu*, Giới tính*, Ngày sinh*, Đơn vị, Tổ chức |
+| **Đầu ra** | Email, Mật khẩu, Họ và tên, Điện thoại | Tên tài khoản, Email, SĐT, Mật khẩu, Giới tính*, Ngày sinh*, Đơn vị, Tổ chức |
 
-*(để trống, không tự bịa)*
+\* để trống — nguồn không có thông tin này nên tool không tự bịa.
 
-Chuyển chế độ sẽ tự động đổi file mẫu mặc định, đổi ô nhập liệu phù hợp, và
-xoá lựa chọn tệp cũ để tránh nhầm lẫn.
+Mỗi chế độ giữ riêng tệp đã chọn và kết quả xem trước; chuyển tab không làm
+mất dữ liệu của tab kia. File mẫu mặc định tự đổi theo chế độ.
+
+**Mật khẩu mặc định** (`Copenai@2026`) dùng chung cho cả 2 chế độ, có thể sửa
+ở ô "Mật khẩu mặc định".
 
 ## Quy tắc xử lý (áp dụng cho CẢ 2 chế độ)
 
-1. **Email**: chuẩn theo định dạng hợp lệ, viết thường. Thiếu hoặc sai định
-   dạng → **loại bỏ bản ghi** (không tự đoán/sửa email).
-2. **Số điện thoại**: chuẩn theo định dạng Việt Nam (10 số, bắt đầu bằng 0).
-   Không chuẩn hoá được → để trống (không loại cả bản ghi, chỉ email mới bắt buộc).
-3. **Họ và tên**: viết hoa chữ cái đầu mỗi từ, bỏ ký tự đặc biệt/khoảng trắng thừa.
-4. **Trùng email**: tự động loại bỏ (có thể tắt bằng ô tuỳ chọn).
+1. **Email**: viết thường, bỏ khoảng trắng/xuống dòng. Tự sửa **lỗi gõ phím rõ
+   ràng**: dấu phẩy thay dấu chấm (`@gmail,com` → `@gmail.com`), 2 dấu chấm
+   liền nhau, dấu chấm ngay trước/sau `@`. Email **thiếu hẳn** `@` hoặc thiếu
+   tên miền (vd `nvgiang`) → **loại bỏ bản ghi**, không tự đoán.
+2. **Số điện thoại**: chuẩn theo định dạng Việt Nam (10 số, bắt đầu bằng 0);
+   tự xử lý `+84`/`84`, thiếu số 0 đầu. Ô có nhiều số → lấy số hợp lệ đầu
+   tiên. Không chuẩn hoá được → để trống (vẫn giữ bản ghi, chỉ email mới bắt
+   buộc).
+3. **Họ và tên**: viết hoa chữ cái đầu mỗi từ, bỏ ký tự đặc biệt, cắt phần
+   chức vụ/đơn vị bị dính vào tên.
+4. **Trùng email**: mỗi email chỉ giữ 1 người (có thể tắt bằng ô tuỳ chọn).
+   Khi trùng, giữ người có **tên khớp với email** hơn (vd `hvluyen@...` giữ
+   "Hồ Văn Luyến"), vì nguồn hay dán nhầm email của người khác. Người bị loại
+   hiện trong "Cần kiểm tra".
 
-**Riêng chế độ 2** có thêm 2 quy tắc chuẩn hoá:
+**Riêng chế độ 2** có thêm 2 quy tắc:
 - **Đơn vị**: `<cấp hành chính> <tên riêng> - <tỉnh/thành>` (vd `UBND phường
-  Ninh Kiều` → `Phường Ninh Kiều - Cần Thơ`).
+  Ninh Kiều` → `Phường Ninh Kiều - Cần Thơ`). Không có cột đơn vị thì lấy từ
+  tiêu đề văn bản (vd "Tên Cơ quan, đơn vị: ..." hoặc "Danh sách ... của ...").
 - **Tổ chức**: tên chính thức hiện nay của tỉnh/thành cấp 1, viết hoa toàn
-  bộ. Tự nhận diện qua tên tỉnh cũ/mới trong dữ liệu, dùng ô "Tổ chức mặc
-  định" làm phương án dự phòng. Có sẵn bảng tra cứu đầy đủ 34 tỉnh/thành sau
-  sáp nhập 2025 (đã kiểm chứng qua Cổng TTĐT Chính phủ).
+  bộ (vd `THÀNH PHỐ CẦN THƠ`). Tự quy tên tỉnh cũ về tỉnh mới theo bảng 34
+  tỉnh/thành sau sáp nhập 2025. Ô "Tổ chức mặc định" dùng khi nguồn không nêu
+  rõ; nếu ô này không phải tỉnh/thành (vd "Viện Năng lượng nguyên tử Việt
+  Nam") thì dùng nguyên văn cho mọi dòng.
 
 ## Về độ chính xác
 
-Tool **không bao giờ tự bịa dữ liệu thiếu**. Mọi dòng không đáp ứng đủ điều
-kiện (thiếu/sai email, trùng email) đều bị loại khỏi kết quả và được liệt kê
-**đầy đủ** trong tab **"Cần kiểm tra"** — kèm tệp nguồn/STT, toàn bộ dữ liệu
-gốc, và lý do cụ thể — để bạn tự đối chiếu, sửa dữ liệu nguồn nếu cần, hoặc
-xác nhận đó đúng là dữ liệu cần bỏ qua. Số liệu ở mục "Thống kê" và bảng
-"Xem trước" luôn khớp chính xác 1-1 với dữ liệu thật, không làm tròn hay ước lượng.
+Tool **không bao giờ tự bịa dữ liệu thiếu**. Mọi dòng không đủ điều kiện
+(thiếu/sai email, trùng email) đều bị loại khỏi kết quả và được liệt kê
+**đầy đủ** trong tab **"Cần kiểm tra"** — kèm tệp nguồn, **STT gốc trong tệp**
+(dòng không có STT hiện "sau STT N"), dữ liệu gốc và lý do — để bạn đối chiếu.
 
-Với dữ liệu KHÔNG đúng chuẩn ngay từ nguồn (vd email viết sai hoàn toàn, tên
-đơn vị không có trong bảng tra cứu), tool sẽ không tự đoán mò mà đưa vào
-"Cần kiểm tra" để con người quyết định — đây là cách duy nhất đảm bảo dữ
-liệu ĐÃ XUẤT RA luôn chính xác, thay vì cố gắng "đoán" và có rủi ro sai.
+Tool còn tự phát hiện các dấu hiệu **mất dữ liệu âm thầm** và báo ở mục
+"Thống kê" (⚠) cùng "Nhật ký xử lý":
+- **STT bị nhảy số** (vd 22 → 24). Với PDF, tool tìm lại dòng bị thiếu trong
+  văn bản gốc của trang và khôi phục (♻). Không tìm thấy thì chỉ cảnh báo để
+  bạn mở tệp gốc kiểm tra (thường do nguồn đánh số sai).
+- **Cả cột SĐT (hoặc Đơn vị) trống** trên mọi bản ghi — thường do tiêu đề cột
+  lạ, tool không nhận ra cột.
+- **Bảng có email nhưng không nhận ra tiêu đề cột** nên bị bỏ qua.
+
+"0 dòng cần kiểm tra" chưa chắc đã đúng — hãy luôn đọc các cảnh báo này.
+
+Tool cũng tự xử lý một số lỗi trình bày thường gặp trong PDF: bảng tách qua
+nhiều trang, dòng tiêu đề nhóm (vd "Ủy ban nhân dân xã ...") không bị tính là
+người, email bị cắt sang ô bên cạnh, cột bị lệch.
 
 ## Luồng thao tác chung (cả 2 chế độ)
 
 1. Chọn chế độ → chọn tệp nguồn → (chế độ 2: nhập thêm "Tổ chức mặc định").
-2. Bấm **"Trích xuất & Xem trước"** (hoặc `Enter`) — xem thống kê, bảng "Xem
-   trước" và tab "Cần kiểm tra". **Chưa ghi ra tệp** ở bước này.
+2. Bấm **"Trích xuất & Xem trước"** (hoặc `Enter`) — xem thống kê, cảnh báo,
+   bảng "Xem trước" và tab "Cần kiểm tra". **Chưa ghi ra tệp** ở bước này.
 3. Kiểm tra xong, bấm **"Xuất tệp kết quả..."** (hoặc `Ctrl+S`) — lúc này mới
-   hiện hộp thoại đặt tên/chọn nơi lưu, và tệp mới thực sự được ghi. Nếu có
-   dòng cần kiểm tra, tool tự ghi kèm 1 tệp báo cáo `..._can_kiem_tra.xlsx`.
+   chọn nơi lưu và ghi tệp. Chế độ 2 tự ghi kèm tệp báo cáo
+   `..._can_kiem_tra.xlsx` nếu có dòng bị loại.
 
 **Phím tắt**: `Ctrl+O` chọn tệp · `Enter` trích xuất · `Ctrl+S` xuất tệp.
 
 Có thể tìm kiếm (không phân biệt dấu) và bấm tiêu đề cột để sắp xếp trong cả
 2 tab "Xem trước" và "Cần kiểm tra".
 
----
+## Dòng lệnh (tuỳ chọn)
 
-Chi tiết kỹ thuật đầy đủ (cách đọc từng loại tệp, bảng tra cứu 34 tỉnh/thành,
-các trường hợp đặc biệt...) xem docstring đầu file `extract_contacts.py` và
-`process_template_v2.py`.
+```bash
+# Chế độ 1
+python3 extract_contacts.py --input a.pdf b.xlsx --template cls_template_users.xlsx --output kq.xlsx
+
+# Chế độ 2
+python3 process_template_v2.py --input X.xlsx --template TemplateV2.xlsx \
+    --output kq.xlsx --to-chuc "Cần Thơ" --password Copenai@2026
+```
+
+Chế độ 2 qua dòng lệnh để trống cột Mật khẩu nếu không truyền `--password`.
