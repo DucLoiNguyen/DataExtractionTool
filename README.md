@@ -41,7 +41,7 @@ khi có cài; không có cả hai thì mở tệp bằng Word/Excel, chọn "Sav
 ## Chạy
 
 ```bash
-python3 gui.py
+py gui.py
 ```
 
 ## Chọn chế độ
@@ -51,7 +51,7 @@ Chọn 1 trong 2 tab ở đầu trang:
 | | Chế độ 1 | Chế độ 2 |
 |---|---|---|
 | **Dùng khi** | Chỉ cần Email / Họ tên / SĐT | Cần thêm Đơn vị và Tổ chức |
-| **Đầu vào** | Nhiều tệp PDF, Word (.docx/.doc), Excel (.xlsx/.xls), CSV | 1 tệp PDF, Word (.docx/.doc), Excel (.xlsx/.xls) hoặc CSV |
+| **Đầu vào** | 1 tệp PDF, Word (.docx/.doc), Excel (.xlsx/.xls) hoặc CSV mỗi lần | Nhiều tệp PDF, Word (.docx/.doc), Excel (.xlsx/.xls), CSV cùng lúc |
 | **File mẫu** | `cls_template_users.xlsx` | `TemplateV2.xlsx` |
 | **Đầu ra** | Email, Mật khẩu, Họ và tên, Điện thoại | Tên tài khoản, Email, SĐT, Mật khẩu, Giới tính*, Ngày sinh*, Đơn vị, Tổ chức |
 
@@ -59,6 +59,17 @@ Chọn 1 trong 2 tab ở đầu trang:
 
 Mỗi chế độ giữ riêng tệp đã chọn và kết quả xem trước; chuyển tab không làm
 mất dữ liệu của tab kia. File mẫu mặc định tự đổi theo chế độ.
+
+**Chế độ 2 xử lý nhiều tệp cùng lúc:**
+- Mỗi tệp có ô **"Tổ chức mặc định"** riêng, vì các tệp trong một lần xử lý có
+  thể thuộc các tỉnh khác nhau. Tệp mới thêm lấy giá trị đang có trong ô nhập.
+  Muốn đổi thì chọn tệp, sửa ô rồi bấm **"Gán"**. Không chọn tệp nào thì
+  "Gán" áp dụng cho tất cả.
+- Kết quả **gộp vào 1 tệp**. Tệp "Cần kiểm tra" có thêm cột **Tệp nguồn**.
+- Chỉ **lọc trùng email trong từng tệp**, nên kết quả mỗi tệp giống hệt khi
+  chạy riêng. Nếu một email xuất hiện ở nhiều tệp, tool không tự loại mà chỉ
+  cảnh báo để bạn tự quyết.
+- Tệp nào đọc lỗi thì tool báo cảnh báo và vẫn xử lý tiếp các tệp còn lại.
 
 **Mật khẩu mặc định** (`Copenai@2026`) dùng chung cho cả 2 chế độ, có thể sửa
 ở ô "Mật khẩu mặc định".
@@ -117,7 +128,8 @@ người, email bị cắt sang ô bên cạnh, cột bị lệch.
 
 ## Luồng thao tác chung (cả 2 chế độ)
 
-1. Chọn chế độ → chọn tệp nguồn → (chế độ 2: nhập thêm "Tổ chức mặc định").
+1. Chọn chế độ → chọn tệp nguồn (chế độ 2: có thể chọn nhiều tệp, mỗi tệp một
+   "Tổ chức mặc định").
 2. Bấm **"Trích xuất & Xem trước"** (hoặc `Enter`) — xem thống kê, cảnh báo,
    bảng "Xem trước" và tab "Cần kiểm tra". **Chưa ghi ra tệp** ở bước này.
 3. Kiểm tra xong, bấm **"Xuất tệp kết quả..."** (hoặc `Ctrl+S`) — lúc này mới
@@ -133,11 +145,14 @@ Có thể tìm kiếm (không phân biệt dấu) và bấm tiêu đề cột đ
 
 ```bash
 # Chế độ 1
-python3 extract_contacts.py --input a.pdf b.xlsx --template cls_template_users.xlsx --output kq.xlsx
+py extract_contacts.py --input a.pdf b.xlsx --template cls_template_users.xlsx --output kq.xlsx
 
-# Chế độ 2
-python3 process_template_v2.py --input X.xlsx --template TemplateV2.xlsx \
+# Chế độ 2 (1 hoặc nhiều tệp, gộp vào 1 tệp kết quả)
+py process_template_v2.py --input X.xlsx Y.pdf --template TemplateV2.xlsx \
     --output kq.xlsx --to-chuc "Cần Thơ" --password Copenai@2026
 ```
 
 Chế độ 2 qua dòng lệnh để trống cột Mật khẩu nếu không truyền `--password`.
+Khi truyền nhiều tệp qua dòng lệnh, mọi tệp dùng chung `--to-chuc`. Muốn mỗi
+tệp một Tổ chức riêng thì dùng giao diện. Dòng lệnh chế độ 1 vẫn nhận nhiều tệp
+để tương thích với cách gọi cũ.

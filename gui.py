@@ -6,13 +6,15 @@ gui.py
 Giao diện đồ hoạ DUY NHẤT (Tkinter) cho tool tạo danh sách tài khoản, hỗ
 trợ 2 CHẾ ĐỘ trích xuất (chọn bằng nút chọn ở đầu trang):
 
-  - CHẾ ĐỘ 1: Trích xuất từ tài liệu (PDF/Word/Excel/CSV) — dùng khi có
-    công văn/danh sách tự do, cần trích Email/Họ tên/SĐT. Xuất theo file
-    mẫu "cls_template_users.xlsx".
+  - CHẾ ĐỘ 1: Trích xuất từ tài liệu (PDF/Word/Excel/CSV), 1 tệp mỗi lần
+    — dùng khi có công văn/danh sách tự do, cần trích Email/Họ tên/SĐT.
+    Xuất theo file mẫu "cls_template_users.xlsx".
   - CHẾ ĐỘ 2: Chuẩn hoá danh sách đăng ký (Excel/PDF/Word có cột hoặc ngữ
     cảnh Đơn vị công
     tác) — dùng khi đã có bảng Họ và tên/Đơn vị công tác/Email/SĐT, cần
     chuẩn hoá thêm Đơn vị/Tổ chức. Xuất theo file mẫu "TemplateV2.xlsx".
+    Xử lý NHIỀU tệp 1 lần (mỗi tệp 1 "Tổ chức mặc định" riêng, lọc trùng
+    email trong từng tệp), gộp vào 1 tệp kết quả.
 
 Cả 2 chế độ đều:
   - Áp dụng ĐẦY ĐỦ 3 quy tắc chuẩn hoá gốc (email đúng định dạng + viết
@@ -77,17 +79,20 @@ M1_ISSUE_HEADINGS = {
 M1_ISSUE_SORTABLE = {"source": "source", "row_number": "row_number", "reason": "reason"}
 
 # ----- Cot cho CHE DO 2 -----
-M2_PREVIEW_COLUMNS = ("name", "email", "password", "phone", "don_vi", "to_chuc")
+# Che do 2 xu ly nhieu tep 1 lan -> them cot "Tệp nguồn" (chi hien thi, khong
+# ghi vao file ket qua theo mau).
+M2_PREVIEW_COLUMNS = ("name", "email", "password", "phone", "don_vi", "to_chuc", "source")
 M2_PREVIEW_HEADINGS = {"name": "Tên tài khoản", "email": "Email", "password": "Mật khẩu", "phone": "SĐT",
-                        "don_vi": "Đơn vị", "to_chuc": "Tổ chức"}
-M2_SORTABLE = {"name": "name", "email": "email", "phone": "phone", "don_vi": "don_vi", "to_chuc": "to_chuc"}
+                        "don_vi": "Đơn vị", "to_chuc": "Tổ chức", "source": "Tệp nguồn"}
+M2_SORTABLE = {"name": "name", "email": "email", "phone": "phone", "don_vi": "don_vi", "to_chuc": "to_chuc",
+               "source": "source"}
 
-M2_ISSUE_COLUMNS = ("stt", "raw_name", "raw_email", "raw_phone", "raw_unit", "reason")
+M2_ISSUE_COLUMNS = ("source", "stt", "raw_name", "raw_email", "raw_phone", "raw_unit", "reason")
 M2_ISSUE_HEADINGS = {
-    "stt": "STT", "raw_name": "Họ và tên (gốc)", "raw_email": "Email (gốc)",
+    "source": "Tệp nguồn", "stt": "STT", "raw_name": "Họ và tên (gốc)", "raw_email": "Email (gốc)",
     "raw_phone": "Điện thoại (gốc)", "raw_unit": "Đơn vị công tác (gốc)", "reason": "Lý do",
 }
-M2_ISSUE_SORTABLE = {"stt": "stt", "raw_name": "raw_name", "reason": "reason"}
+M2_ISSUE_SORTABLE = {"source": "source", "stt": "stt", "raw_name": "raw_name", "reason": "reason"}
 
 # ---------------------------------------------------------------------------
 # BẢNG MÀU / THIẾT KẾ (tông ấm)
@@ -134,6 +139,23 @@ def _search_key(text):
 
 def _fmt(n):
     return f"{n:,}".replace(",", ".")
+
+
+def _attach_scrollbars(container, tree, horizontal=True):
+    """Dat tree + thanh cuon doc (va ngang) bang grid. Truoc day dung pack
+    side=left: khi tong do rong cac cot lon hon cho trong (Che do 2 them cot
+    "Tệp nguồn" -> 7 cot x 150px), thanh cuon pack sau bi day ra ngoai khung
+    va bien mat. Grid giu cot thanh cuon co dinh, tree co lai phan con lai."""
+    vsb = ttk.Scrollbar(container, orient="vertical", command=tree.yview)
+    tree.configure(yscrollcommand=vsb.set)
+    tree.grid(row=0, column=0, sticky="nsew")
+    vsb.grid(row=0, column=1, sticky="ns")
+    if horizontal:
+        hsb = ttk.Scrollbar(container, orient="horizontal", command=tree.xview)
+        tree.configure(xscrollcommand=hsb.set)
+        hsb.grid(row=1, column=0, sticky="ew")
+    container.grid_rowconfigure(0, weight=1)
+    container.grid_columnconfigure(0, weight=1)
 
 
 class ResultPanel:
@@ -224,13 +246,10 @@ class ResultPanel:
                                            command=lambda c=col: self._sort_preview(c))
             else:
                 self.preview_tree.heading(col, text=preview_headings[col])
-            self.preview_tree.column(col, width=150, anchor="w")
-        self.preview_tree.pack(side="left", fill="both", expand=True)
+            self.preview_tree.column(col, width=150, minwidth=60, anchor="w")
+        _attach_scrollbars(tree_inner, self.preview_tree)
         self.preview_tree.tag_configure("odd", background="#ffffff")
         self.preview_tree.tag_configure("even", background="#f7f2e9")
-        psb = ttk.Scrollbar(tree_inner, orient="vertical", command=self.preview_tree.yview)
-        psb.pack(side="left", fill="y")
-        self.preview_tree.config(yscrollcommand=psb.set)
 
         self.preview_note_var = tk.StringVar(value='Chưa có dữ liệu. Hãy bấm "Trích xuất & Xem trước".')
         ttk.Label(pbody, textvariable=self.preview_note_var, style="Muted.TLabel").pack(anchor="w", pady=(8, 0))
@@ -262,16 +281,13 @@ class ResultPanel:
             else:
                 self.issues_tree.heading(col, text=issue_headings[col])
             anchor = "center" if col in ("row_number", "stt") else "w"
-            self.issues_tree.column(col, width=widths.get(col, 140), anchor=anchor)
-        self.issues_tree.pack(side="left", fill="both", expand=True)
+            self.issues_tree.column(col, width=widths.get(col, 140), minwidth=45, anchor=anchor)
+        _attach_scrollbars(itree_inner, self.issues_tree)
         self.issues_tree.tag_configure("odd", background="#ffffff")
         self.issues_tree.tag_configure("even", background="#f7f2e9")
         self.issues_tree.tag_configure("reason_missing", foreground=COLOR_WARN)
         self.issues_tree.tag_configure("reason_invalid", foreground=COLOR_WARN)
         self.issues_tree.tag_configure("reason_duplicate", foreground=COLOR_DANGER)
-        isb = ttk.Scrollbar(itree_inner, orient="vertical", command=self.issues_tree.yview)
-        isb.pack(side="left", fill="y")
-        self.issues_tree.config(yscrollcommand=isb.set)
 
         self.issues_note_var = tk.StringVar(
             value="Chưa có dữ liệu. Các dòng bị loại (thiếu email, sai định dạng, trùng email) sẽ hiện ở đây."
@@ -489,10 +505,12 @@ class ContactExtractorGUI(tk.Tk):
         self.mode_var = tk.StringVar(value="mode1")
         self._ui_ready = False  # tranh <<NotebookTabChanged>> kich hoat qua som luc dang dung giao dien
 
-        # Che do 1
-        self.input_paths = []
-        # Che do 2
-        self.mode2_input_path = tk.StringVar()
+        # Che do 1: 1 tep moi lan
+        self.mode1_input_path = tk.StringVar()
+        # Che do 2: nhieu tep, moi tep 1 "To chuc mac dinh" rieng (cac tep
+        # trong 1 lo co the thuoc cac tinh khac nhau). Giu thu tu them tep.
+        self.mode2_paths = []
+        self.mode2_to_chuc = {}  # duong dan -> to chuc mac dinh
         self.to_chuc_var = tk.StringVar()
 
         self.base_font_family = _pick_font(["Segoe UI", "Helvetica Neue", "Helvetica", "Arial"])
@@ -656,11 +674,19 @@ class ContactExtractorGUI(tk.Tk):
         left_col = tk.Frame(content, bg=COLOR_BG, width=380)
         left_col.pack(side="left", fill="y", padx=(0, 8))
         left_col.pack_propagate(False)
+        # pack_propagate(False) giu co dinh chieu RONG, nhung cung lam chieu
+        # cao khong con tinh theo noi dung -> cot trai chi cao bang cot phai,
+        # phan duoi (Mat khau, nut Trich xuat) bi che khi the chon tep Che do
+        # 2 cao len (danh sach tep + o To chuc). Dat chieu cao theo noi dung.
+        left_inner = tk.Frame(left_col, bg=COLOR_BG)
+        left_inner.pack(fill="x")
+        self._left_col, self._left_inner = left_col, left_inner
+        left_inner.bind("<Configure>", lambda e: self._sync_left_height())
 
         right_col = tk.Frame(content, bg=COLOR_BG)
         right_col.pack(side="left", fill="both", expand=True, padx=(8, 0))
 
-        self._build_left_column(left_col)
+        self._build_left_column(left_inner)
         self._build_right_column(right_col)
 
         # ===== NUT XUAT TEP (dung chung cho ca 2 che do, nam trong vung
@@ -704,6 +730,12 @@ class ContactExtractorGUI(tk.Tk):
         self.mode_var.set("mode1" if idx == 0 else "mode2")
         self._apply_mode()
 
+    def _sync_left_height(self):
+        self.update_idletasks()
+        h = self._left_inner.winfo_reqheight()
+        if int(self._left_col.cget("height")) != h:
+            self._left_col.config(height=h)
+
     def _sync_export_button(self):
         """Bat/tat nut Xuat tep DUNG CHUNG dua tren panel dang duoc chon co
         du lieu hay khong. Goi moi khi doi che do hoac sau khi trich xuat."""
@@ -715,43 +747,58 @@ class ContactExtractorGUI(tk.Tk):
         # ===== THE 1: CHON TEP NGUON (noi dung doi theo che do) =====
         self.file_card_body = self._card(parent, "\U0001F4C2", "1. Chọn tệp nguồn")
 
-        # -- noi dung cho CHE DO 1: danh sach nhieu tep --
+        # -- noi dung cho CHE DO 1: 1 tep moi lan --
         self.m1_file_frame = tk.Frame(self.file_card_body, bg=COLOR_CARD)
-        list_wrap = tk.Frame(self.m1_file_frame, bg=COLOR_BORDER)
-        list_wrap.pack(fill="both", expand=True)
-        self.listbox = tk.Listbox(
-            list_wrap, height=6, selectmode=tk.EXTENDED, activestyle="none",
-            bg="#ffffff", fg=COLOR_TEXT, selectbackground=COLOR_ACCENT, selectforeground="#ffffff",
-            relief="flat", highlightthickness=0, font=(self.base_font_family, 10),
-        )
-        self.listbox.pack(fill="both", expand=True, padx=1, pady=1)
-        btns_input = ttk.Frame(self.m1_file_frame, style="Card.TFrame")
-        btns_input.pack(fill="x", pady=(8, 0))
-        for i in range(3):
-            btns_input.grid_columnconfigure(i, weight=1)
-        ttk.Button(btns_input, text="\U0001F4C1 Thêm", style="Secondary.TButton",
-                   command=self.add_files).grid(row=0, column=0, sticky="ew", padx=(0, 4))
-        ttk.Button(btns_input, text="\u2716 Xoá chọn", style="Secondary.TButton",
-                   command=self.remove_selected).grid(row=0, column=1, sticky="ew", padx=4)
-        ttk.Button(btns_input, text="\U0001F9F9 Xoá hết", style="Secondary.TButton",
-                   command=self.clear_files).grid(row=0, column=2, sticky="ew", padx=(4, 0))
-        self.file_count_var = tk.StringVar(value="Chưa chọn tệp nào.")
-        ttk.Label(self.m1_file_frame, textvariable=self.file_count_var, style="Muted.TLabel").pack(
-            anchor="w", pady=(8, 0))
-
-        # -- noi dung cho CHE DO 2: 1 tep duy nhat --
-        self.m2_file_frame = tk.Frame(self.file_card_body, bg=COLOR_CARD)
-        ttk.Label(self.m2_file_frame, text="Tệp danh sách đăng ký (Excel/PDF/Word/CSV):",
+        ttk.Label(self.m1_file_frame, text="Tệp nguồn (PDF/Word/Excel/CSV):",
                   style="Card.TLabel").pack(anchor="w")
-        row_m2 = ttk.Frame(self.m2_file_frame, style="Card.TFrame")
-        row_m2.pack(fill="x", pady=(4, 0))
-        ttk.Entry(row_m2, textvariable=self.mode2_input_path).pack(side="left", fill="x", expand=True)
-        ttk.Button(row_m2, text="...", width=3, style="Secondary.TButton",
-                   command=self.choose_mode2_file).pack(side="left", padx=(6, 0))
-        ttk.Label(self.m2_file_frame,
-                  text="Cần nhận diện được cột Họ và tên/Email (SĐT, Đơn vị công tác nếu có) — "
-                       "chấp nhận cả bảng Excel lẫn tài liệu PDF/Word dạng danh sách",
+        row_m1 = ttk.Frame(self.m1_file_frame, style="Card.TFrame")
+        row_m1.pack(fill="x", pady=(4, 0))
+        ttk.Entry(row_m1, textvariable=self.mode1_input_path).pack(side="left", fill="x", expand=True)
+        ttk.Button(row_m1, text="...", width=3, style="Secondary.TButton",
+                   command=self.choose_mode1_file).pack(side="left", padx=(6, 0))
+        ttk.Label(self.m1_file_frame, text="Mỗi lần xử lý 1 tệp.",
                   style="Muted.TLabel", wraplength=320).pack(anchor="w", pady=(8, 0))
+
+        # -- noi dung cho CHE DO 2: nhieu tep, moi tep 1 To chuc mac dinh --
+        self.m2_file_frame = tk.Frame(self.file_card_body, bg=COLOR_CARD)
+        tree_wrap = tk.Frame(self.m2_file_frame, bg=COLOR_BORDER)
+        tree_wrap.pack(fill="both", expand=True)
+        m2_inner = tk.Frame(tree_wrap, bg=COLOR_CARD)
+        m2_inner.pack(fill="both", expand=True, padx=1, pady=1)
+        self.m2_tree = ttk.Treeview(m2_inner, columns=("file", "to_chuc"), show="headings",
+                                    height=6, selectmode="extended")
+        self.m2_tree.heading("file", text="Tệp")
+        self.m2_tree.heading("to_chuc", text="Tổ chức mặc định")
+        self.m2_tree.column("file", width=190, minwidth=80, anchor="w")
+        self.m2_tree.column("to_chuc", width=115, minwidth=60, anchor="w")
+        _attach_scrollbars(m2_inner, self.m2_tree, horizontal=False)
+        self.m2_tree.bind("<<TreeviewSelect>>", self._on_mode2_select)
+        btns_m2 = ttk.Frame(self.m2_file_frame, style="Card.TFrame")
+        btns_m2.pack(fill="x", pady=(8, 0))
+        for i in range(3):
+            btns_m2.grid_columnconfigure(i, weight=1)
+        ttk.Button(btns_m2, text="\U0001F4C1 Thêm", style="Secondary.TButton",
+                   command=self.add_mode2_files).grid(row=0, column=0, sticky="ew", padx=(0, 4))
+        ttk.Button(btns_m2, text="✖ Xoá chọn", style="Secondary.TButton",
+                   command=self.remove_mode2_selected).grid(row=0, column=1, sticky="ew", padx=4)
+        ttk.Button(btns_m2, text="\U0001F9F9 Xoá hết", style="Secondary.TButton",
+                   command=self.clear_mode2_files).grid(row=0, column=2, sticky="ew", padx=(4, 0))
+
+        ttk.Label(self.m2_file_frame, text="Tổ chức mặc định (tỉnh/thành, không tiền tố):",
+                  style="Card.TLabel").pack(anchor="w", pady=(12, 0))
+        row_tc = ttk.Frame(self.m2_file_frame, style="Card.TFrame")
+        row_tc.pack(fill="x", pady=(4, 0))
+        ttk.Entry(row_tc, textvariable=self.to_chuc_var).pack(side="left", fill="x", expand=True)
+        ttk.Button(row_tc, text="Gán", style="Secondary.TButton",
+                   command=self.apply_to_chuc).pack(side="left", padx=(6, 0))
+        ttk.Label(self.m2_file_frame,
+                  text="Tệp mới thêm lấy giá trị trong ô này. Bấm \"Gán\" để áp dụng cho các tệp đang chọn "
+                       "(không chọn tệp nào = áp dụng cho tất cả). Dùng khi nguồn không tự nêu rõ "
+                       "tỉnh/thành (vd \"Sở Tư pháp\"). Ví dụ: Cần Thơ",
+                  style="Muted.TLabel", wraplength=320).pack(anchor="w", pady=(4, 0))
+        self.m2_count_var = tk.StringVar(value="Chưa chọn tệp nào.")
+        ttk.Label(self.m2_file_frame, textvariable=self.m2_count_var, style="Muted.TLabel").pack(
+            anchor="w", pady=(8, 0))
 
         # ===== THE 2: FILE MAU + TUY CHON =====
         body2 = self._card(parent, "\u2699", "2. File mẫu & Tuỳ chọn")
@@ -771,15 +818,6 @@ class ContactExtractorGUI(tk.Tk):
         self.password_var = tk.StringVar(value=core.DEFAULT_PASSWORD)
         ttk.Entry(self.password_frame, textvariable=self.password_var).pack(fill="x", pady=(4, 10))
         self.password_frame.pack(fill="x")
-
-        # -- rieng CHE DO 2: to chuc mac dinh --
-        self.m2_to_chuc_frame = tk.Frame(body2, bg=COLOR_CARD)
-        ttk.Label(self.m2_to_chuc_frame, text="Tổ chức mặc định (tỉnh/thành, không tiền tố):",
-                  style="Card.TLabel").pack(anchor="w")
-        ttk.Entry(self.m2_to_chuc_frame, textvariable=self.to_chuc_var).pack(fill="x", pady=(4, 4))
-        ttk.Label(self.m2_to_chuc_frame,
-                  text="Dùng khi dữ liệu nguồn không tự nêu rõ tỉnh/thành (vd \"Sở Tư pháp\"). Ví dụ: Cần Thơ",
-                  style="Muted.TLabel", wraplength=320).pack(anchor="w", pady=(0, 10))
 
         self.dedupe_var = tk.BooleanVar(value=True)
         self.dedupe_check = ttk.Checkbutton(body2, text="Tự động loại bỏ bản ghi trùng email",
@@ -819,10 +857,11 @@ class ContactExtractorGUI(tk.Tk):
 
         def m2_row_to_values(rec):
             password = self.password_var.get() or core.DEFAULT_PASSWORD
-            return (rec["name"], rec["email"], password, rec["phone"], rec["don_vi"], rec["to_chuc"])
+            return (rec["name"], rec["email"], password, rec["phone"], rec["don_vi"], rec["to_chuc"],
+                    rec.get("source", ""))
 
         def m2_issue_row_to_values(issue):
-            return (issue.get("stt", ""), issue.get("raw_name", ""), issue.get("raw_email", ""),
+            return (issue.get("source", ""), issue.get("stt", ""), issue.get("raw_name", ""), issue.get("raw_email", ""),
                     issue.get("raw_phone", ""), issue.get("raw_unit", ""))
 
         self.panel_m2 = ResultPanel(
@@ -840,7 +879,6 @@ class ContactExtractorGUI(tk.Tk):
         # An het truoc, roi hien dung phan
         self.m1_file_frame.pack_forget()
         self.m2_file_frame.pack_forget()
-        self.m2_to_chuc_frame.pack_forget()
         self.panel_m1.pack_forget()
         self.panel_m2.pack_forget()
 
@@ -848,16 +886,12 @@ class ContactExtractorGUI(tk.Tk):
             self.m1_file_frame.pack(fill="both", expand=True)
             self.panel_m1.pack()
             default_tpl = os.path.join(THIS_DIR, "cls_template_users.xlsx")
+            self.dedupe_check.config(text="Tự động loại bỏ bản ghi trùng email")
         else:
             self.m2_file_frame.pack(fill="both", expand=True)
-            self.m2_to_chuc_frame.pack(fill="x")
             self.panel_m2.pack()
             default_tpl = os.path.join(THIS_DIR, "TemplateV2.xlsx")
-
-        # Dam bao checkbox "loai trung email" LUON nam SAU cung trong the 2,
-        # bat ke frame nao (to chuc, che do 2) vua duoc pack o tren.
-        self.dedupe_check.pack_forget()
-        self.dedupe_check.pack(anchor="w")
+            self.dedupe_check.config(text="Tự động loại bỏ bản ghi trùng email (trong từng tệp)")
 
         if os.path.exists(default_tpl):
             self.template_var.set(default_tpl)
@@ -865,6 +899,7 @@ class ContactExtractorGUI(tk.Tk):
             self.template_var.set("")
 
         self._sync_export_button()
+        self._sync_left_height()
 
     @property
     def active_panel(self):
@@ -874,10 +909,10 @@ class ContactExtractorGUI(tk.Tk):
     # PHIM TAT
     # ------------------------------------------------------------------
     def _setup_shortcuts(self):
-        self.bind_all("<Control-o>", lambda e: self.add_files() if self.mode_var.get() == "mode1"
-                      else self.choose_mode2_file())
-        self.bind_all("<Control-O>", lambda e: self.add_files() if self.mode_var.get() == "mode1"
-                      else self.choose_mode2_file())
+        self.bind_all("<Control-o>", lambda e: self.choose_mode1_file() if self.mode_var.get() == "mode1"
+                      else self.add_mode2_files())
+        self.bind_all("<Control-O>", lambda e: self.choose_mode1_file() if self.mode_var.get() == "mode1"
+                      else self.add_mode2_files())
         self.bind_all("<Return>", self._shortcut_extract)
         self.bind_all("<Control-s>", self._shortcut_export)
         self.bind_all("<Control-S>", self._shortcut_export)
@@ -891,45 +926,76 @@ class ContactExtractorGUI(tk.Tk):
             self.export_result()
 
     # ------------------------------------------------------------------
-    # CHE DO 1: FILE NGUON (nhieu tep)
+    # CHE DO 1: FILE NGUON (1 tep)
     # ------------------------------------------------------------------
-    def add_files(self):
-        paths = filedialog.askopenfilenames(title="Chọn tệp nguồn", filetypes=MODE1_INPUT_FILETYPES)
-        for p in paths:
-            if p not in self.input_paths:
-                self.input_paths.append(p)
-                icon = FILE_ICONS.get(os.path.splitext(p)[1].lower(), "\U0001F4C4")
-                self.listbox.insert(tk.END, f"{icon}  {os.path.basename(p)}")
-        self._update_file_count()
-
-    def remove_selected(self):
-        for idx in reversed(self.listbox.curselection()):
-            self.listbox.delete(idx)
-            del self.input_paths[idx]
-        self._update_file_count()
-
-    def clear_files(self):
-        self.listbox.delete(0, tk.END)
-        self.input_paths = []
-        self._update_file_count()
-
-    def _update_file_count(self):
-        n = len(self.input_paths)
-        if n == 0:
-            self.file_count_var.set("Chưa chọn tệp nào.")
-        elif n == 1:
-            self.file_count_var.set("Đã chọn 1 tệp.")
-        else:
-            self.file_count_var.set(f"Đã chọn {n} tệp.")
-
-    # ------------------------------------------------------------------
-    # CHE DO 2: FILE NGUON (1 tep)
-    # ------------------------------------------------------------------
-    def choose_mode2_file(self):
-        path = filedialog.askopenfilename(title="Chọn tệp danh sách đăng ký",
-                                           filetypes=MODE2_INPUT_FILETYPES)
+    def choose_mode1_file(self):
+        path = filedialog.askopenfilename(title="Chọn tệp nguồn", filetypes=MODE1_INPUT_FILETYPES)
         if path:
-            self.mode2_input_path.set(path)
+            self.mode1_input_path.set(path)
+
+    # ------------------------------------------------------------------
+    # CHE DO 2: FILE NGUON (nhieu tep, moi tep 1 To chuc mac dinh)
+    # ------------------------------------------------------------------
+    def add_mode2_files(self):
+        paths = filedialog.askopenfilenames(title="Chọn tệp danh sách đăng ký",
+                                            filetypes=MODE2_INPUT_FILETYPES)
+        self.add_mode2_paths(paths)
+
+    def add_mode2_paths(self, paths, to_chuc=None):
+        """Them tep vao danh sach che do 2 (bo qua tep da co). To chuc mac
+        dinh lay tu tham so, hoac tu o nhap hien tai."""
+        value = (self.to_chuc_var.get() if to_chuc is None else to_chuc).strip()
+        for p in paths:
+            if p in self.mode2_to_chuc:
+                continue
+            self.mode2_paths.append(p)
+            self.mode2_to_chuc[p] = value
+        self._refresh_mode2_tree()
+
+    def remove_mode2_selected(self):
+        for iid in self.m2_tree.selection():
+            path = self.mode2_paths[int(iid)]
+            self.mode2_to_chuc.pop(path, None)
+        keep = set(self.mode2_to_chuc)
+        self.mode2_paths = [p for p in self.mode2_paths if p in keep]
+        self._refresh_mode2_tree()
+
+    def clear_mode2_files(self):
+        self.mode2_paths = []
+        self.mode2_to_chuc = {}
+        self._refresh_mode2_tree()
+
+    def apply_to_chuc(self):
+        """Gan o 'To chuc mac dinh' cho cac tep dang chon; khong chon tep nao
+        -> gan cho tat ca (truong hop hay gap: ca lo cung 1 tinh)."""
+        value = self.to_chuc_var.get().strip()
+        selected = self.m2_tree.selection()
+        targets = [self.mode2_paths[int(i)] for i in selected] if selected else list(self.mode2_paths)
+        for p in targets:
+            self.mode2_to_chuc[p] = value
+        self._refresh_mode2_tree(keep_selection=selected)
+
+    def _on_mode2_select(self, event=None):
+        # Chon 1 tep -> hien To chuc cua tep do trong o nhap de sua nhanh.
+        selected = self.m2_tree.selection()
+        if len(selected) == 1:
+            self.to_chuc_var.set(self.mode2_to_chuc.get(self.mode2_paths[int(selected[0])], ""))
+
+    def _refresh_mode2_tree(self, keep_selection=()):
+        self.m2_tree.delete(*self.m2_tree.get_children())
+        for i, p in enumerate(self.mode2_paths):
+            icon = FILE_ICONS.get(os.path.splitext(p)[1].lower(), "\U0001F4C4")
+            self.m2_tree.insert("", tk.END, iid=str(i),
+                                values=(f"{icon}  {os.path.basename(p)}", self.mode2_to_chuc.get(p) or "(trống)"))
+        valid = [i for i in keep_selection if self.m2_tree.exists(i)]
+        if valid:
+            self.m2_tree.selection_set(valid)
+        n = len(self.mode2_paths)
+        missing = sum(1 for p in self.mode2_paths if not self.mode2_to_chuc.get(p))
+        text = "Chưa chọn tệp nào." if n == 0 else f"Đã chọn {n} tệp."
+        if missing:
+            text += f" {missing} tệp chưa có Tổ chức mặc định."
+        self.m2_count_var.set(text)
 
     # ------------------------------------------------------------------
     def choose_template(self):
@@ -988,13 +1054,15 @@ class ContactExtractorGUI(tk.Tk):
                          "(xem Nhật ký xử lý).", "neutral"))
         if warnings:
             segs.append((f"\n⚠ {len(warnings)} cảnh báo cần đối chiếu tệp gốc "
-                         "(STT nhảy số / cột trống) - xem Nhật ký xử lý bên dưới.", "warn"))
+                         "(STT nhảy số / cột trống / tệp đọc lỗi) - xem Nhật ký xử lý bên dưới.", "warn"))
         return segs
 
     def _mode2_pipeline_segments(self, stats):
         missing_invalid = sum(1 for i in stats["issues"]
                                if i["reason"] in ("missing_email", "invalid_email_format"))
-        return [
+        files = stats.get("files") or []
+        prefix = [(f"{len(files)} tệp  ·  ", "neutral")] if len(files) > 1 else []
+        return prefix + [
             (f"{_fmt(stats['total_read'])} dòng đọc được", "neutral"),
             ("  \u2192  ", "arrow"),
             (f"-{_fmt(missing_invalid)} thiếu/sai email", "warn"),
@@ -1010,12 +1078,12 @@ class ContactExtractorGUI(tk.Tk):
     def start_extract(self):
         mode = self.mode_var.get()
         if mode == "mode1":
-            if not self.input_paths:
-                messagebox.showwarning("Thiếu dữ liệu", "Vui lòng chọn ít nhất 1 tệp nguồn.")
+            if not self.mode1_input_path.get().strip():
+                messagebox.showwarning("Thiếu dữ liệu", "Vui lòng chọn tệp nguồn.")
                 return
         else:
-            if not self.mode2_input_path.get().strip():
-                messagebox.showwarning("Thiếu dữ liệu", "Vui lòng chọn tệp danh sách đăng ký.")
+            if not self.mode2_paths:
+                messagebox.showwarning("Thiếu dữ liệu", "Vui lòng chọn ít nhất 1 tệp danh sách đăng ký.")
                 return
 
         self.run_button.config(state="disabled")
@@ -1027,13 +1095,12 @@ class ContactExtractorGUI(tk.Tk):
         if mode == "mode1":
             thread = threading.Thread(
                 target=self._extract_worker_mode1,
-                args=(list(self.input_paths), self.dedupe_var.get()), daemon=True,
+                args=([self.mode1_input_path.get().strip()], self.dedupe_var.get()), daemon=True,
             )
         else:
+            items = [(p, self.mode2_to_chuc.get(p, "")) for p in self.mode2_paths]
             thread = threading.Thread(
-                target=self._extract_worker_mode2,
-                args=(self.mode2_input_path.get().strip(), self.to_chuc_var.get().strip(), self.dedupe_var.get()),
-                daemon=True,
+                target=self._extract_worker_mode2, args=(items, self.dedupe_var.get()), daemon=True,
             )
         thread.start()
 
@@ -1048,12 +1115,11 @@ class ContactExtractorGUI(tk.Tk):
         finally:
             sys.stdout, sys.stderr = old_stdout, old_stderr
 
-    def _extract_worker_mode2(self, input_path, to_chuc, dedupe):
+    def _extract_worker_mode2(self, items, dedupe):
         old_stdout, old_stderr = sys.stdout, sys.stderr
         sys.stdout = sys.stderr = _StreamToLog(self)
         try:
-            records, stats = v2.extract_v2(input_path, default_to_chuc=to_chuc or None,
-                                            dedupe=dedupe, verbose=True)
+            records, stats = v2.extract_v2_batch(items, dedupe=dedupe, verbose=True)
             self.after(0, self._on_extract_success_mode2, records, stats)
         except Exception as e:
             self.after(0, self._on_extract_error, str(e))
@@ -1068,7 +1134,7 @@ class ContactExtractorGUI(tk.Tk):
         self.panel_m1.load_results(records, stats)
         if not records:
             messagebox.showinfo("Không có dữ liệu hợp lệ",
-                                 "Không trích xuất được bản ghi nào có email hợp lệ từ các tệp đã chọn.\n"
+                                 "Không trích xuất được bản ghi nào có email hợp lệ từ tệp đã chọn.\n"
                                  'Xem tab "Cần kiểm tra" để biết chi tiết từng dòng bị loại.')
 
     def _on_extract_success_mode2(self, records, stats):
@@ -1082,7 +1148,7 @@ class ContactExtractorGUI(tk.Tk):
                      f"(để trống) - kiểm tra lại ô 'Tổ chức mặc định' hoặc dữ liệu nguồn.")
         if not records:
             messagebox.showinfo("Không có dữ liệu hợp lệ",
-                                 "Không trích xuất được bản ghi nào có email hợp lệ từ tệp đã chọn.\n"
+                                 "Không trích xuất được bản ghi nào có email hợp lệ từ các tệp đã chọn.\n"
                                  'Xem tab "Cần kiểm tra" để biết chi tiết từng dòng bị loại.')
 
     def _on_extract_error(self, error_message):
