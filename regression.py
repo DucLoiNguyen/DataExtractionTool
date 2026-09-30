@@ -105,6 +105,23 @@ def unit_checks():
     check(all(core.is_stt_header(h) for h in ("STT", "TT", "Stt", "Số TT")), "nhận tiêu đề STT")
     check(set(core.HEADER_KEYWORDS["email"]) <= set(v2.SOURCE_HEADER_KEYWORDS), "từ khoá email đồng bộ")
     check(set(core.HEADER_KEYWORDS["phone"]) <= set(v2.SOURCE_HEADER_KEYWORDS), "từ khoá SĐT đồng bộ")
+    # Gop cap duoi xa/phuong ve chinh xa/phuong (Che do 2)
+    for raw, tc, exp in [
+        ("phòng vh xã nam định", "Ninh Bình", "Xã Nam Định - Ninh Bình"),
+        ("Ban kinh tế xã hội HĐND xã Tả Phìn", "Lào Cai", "Xã Tả Phìn - Lào Cai"),
+        ("Đoàn thanh niên CS Hồ Chí Minh xã\nTả Phìn", "Lào Cai", "Xã Tả Phìn - Lào Cai"),
+        ("UBND Phường Chánh Hưng/ VP HĐND-UBND", "Hồ Chí Minh", "Phường Chánh Hưng - Hồ Chí Minh"),
+        ("Phường Xã Đàn", "Hà Nội", "Phường Xã Đàn - Hà Nội"),
+        ("Phòng Nội vụ thị xã Bến Cát", "Hồ Chí Minh", "Phòng Nội vụ thị xã Bến Cát - Hồ Chí Minh"),
+        ("Hợp tác xã Nông nghiệp An Bình", "Cần Thơ", "Hợp tác xã Nông nghiệp An Bình - Cần Thơ"),
+        ("Phòng Văn hóa - Xã hội", "Hồ Chí Minh", "Phòng Văn hóa - Xã hội - Hồ Chí Minh"),
+        ("Phòng Kinh tế xã", "Quảng Ngãi", "Phòng Kinh tế xã - Quảng Ngãi"),
+        ("Chủ tịch UBND phường", "Hồ Chí Minh", "Chủ tịch UBND phường - Hồ Chí Minh"),
+    ]:
+        got = v2.normalize_don_vi(raw, tc)
+        check(got == exp, f"gộp xã/phường: {raw!r} -> {got!r} (kỳ vọng {exp!r})")
+    check(v2.determine_to_chuc("Đoàn thanh niên CS Hồ Chí Minh xã Tả Phìn", "Lào Cai") == "TỈNH LÀO CAI",
+          "Tổ chức không bị nhận nhầm từ tên 'Hồ Chí Minh' của Đoàn thanh niên")
     print(f"{'OK ' if not fails else 'SAI'} kiểm tra đơn vị ({fails} lỗi)")
     return fails
 
@@ -186,8 +203,11 @@ def _qualitative(results):
         stts = {r["stt"] for r in recs}
         check({"23", "40", "55", "79"} <= stts, "Tả Phìn: có STT 23, 40, 55, 79")
         r40 = [r for r in recs if r["stt"] == "40"]
-        check(r40 and r40[0]["don_vi"].startswith("Ban kinh tế xã hội HĐND xã Tả Phìn"),
-              "Tả Phìn: STT 40 đơn vị Ban kinh tế xã hội HĐND xã Tả Phìn")
+        # Goc: "Ban kinh tế xã hội HĐND xã Tả Phìn" (khoi phuc tu van ban tho) -> gop ve xa
+        check(r40 and r40[0]["don_vi"] == "Xã Tả Phìn - Lào Cai",
+              "Tả Phìn: STT 40 (Ban kinh tế xã hội HĐND xã Tả Phìn) -> Xã Tả Phìn - Lào Cai")
+        check(all(r["to_chuc"] == "TỈNH LÀO CAI" for r in recs),
+              "Tả Phìn: mọi Tổ chức = TỈNH LÀO CAI (kể cả Đoàn thanh niên CS Hồ Chí Minh xã Tả Phìn)")
     if "VINATOM.xls" in results:
         recs = results["VINATOM.xls"][0]
         check(all(r["to_chuc"] == "VIỆN NĂNG LƯỢNG NGUYÊN TỬ VIỆT NAM" for r in recs),
@@ -197,10 +217,11 @@ def _qualitative(results):
         check(all(r["phone"] for r in recs), "Đà Nẵng: mọi dòng có SĐT")
         check(all(r["don_vi"] == "Văn phòng UBND thành phố Đà Nẵng - Đà Nẵng" for r in recs),
               "Đà Nẵng: đơn vị 'Văn phòng UBND thành phố Đà Nẵng - Đà Nẵng'")
+    if "LongHoa.xlsx" in results:
+        r = by_email_prefix(results["LongHoa.xlsx"][0], "hvluyen")
+        check(r and r[0]["name"] == "Hồ Văn Luyến", "Long Hòa: hvluyen giữ Hồ Văn Luyến")
     if "P_LongHoa.doc" in results:
-        r = by_email_prefix(results["P_LongHoa.doc"][0], "hvluyen")
-        check(not results["P_LongHoa.doc"][0] or (r and r[0]["name"] == "Hồ Văn Luyến"),
-              "Long Hòa (.doc): hvluyen giữ Hồ Văn Luyến")
+        check(not results["P_LongHoa.doc"][0], "P Long Hòa (.doc): nguồn không có email -> 0 bản ghi")
     return fails
 
 

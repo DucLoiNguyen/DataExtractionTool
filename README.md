@@ -25,9 +25,18 @@ thư mục**. Chỉ cần chạy `gui.py`.
 pip install openpyxl python-docx pdfplumber xlrd
 ```
 
-Tuỳ chọn: cài [LibreOffice](https://www.libreoffice.org/) nếu cần đọc tệp Word
-cũ `.doc` (Word 97-2003). Không có LibreOffice thì mở tệp bằng Word, chọn
-"Save As" sang `.docx` rồi dùng tệp mới.
+Để đọc tệp Word cũ `.doc` (Word 97-2003), tool nhờ **Microsoft Word** trên máy
+tự chuyển sang `.docx`; cần cài thêm:
+
+```bash
+pip install pywin32
+```
+
+Word chạy ẩn, không ảnh hưởng tới các cửa sổ Word bạn đang mở. Tệp `.xls` bị
+hỏng mà thư viện xlrd không đọc được cũng tự chuyển qua Excel theo cách này.
+Nếu máy không có Microsoft Office, tool dùng [LibreOffice](https://www.libreoffice.org/)
+khi có cài; không có cả hai thì mở tệp bằng Word/Excel, chọn "Save As" sang
+`.docx`/`.xlsx` rồi dùng tệp mới.
 
 ## Chạy
 
@@ -73,7 +82,10 @@ mất dữ liệu của tab kia. File mẫu mặc định tự đổi theo chế
 
 **Riêng chế độ 2** có thêm 2 quy tắc:
 - **Đơn vị**: `<cấp hành chính> <tên riêng> - <tỉnh/thành>` (vd `UBND phường
-  Ninh Kiều` → `Phường Ninh Kiều - Cần Thơ`). Không có cột đơn vị thì lấy từ
+  Ninh Kiều` → `Phường Ninh Kiều - Cần Thơ`). Đơn vị cấp dưới xã/phường (phòng,
+  ban, trung tâm, Đảng ủy, trạm y tế...) được gộp về chính xã/phường đó (vd
+  `Phòng VHXH xã Tả Phìn` → `Xã Tả Phìn - Lào Cai`); "thị xã", "hợp tác xã",
+  "Xã hội" không bị gộp. Không có cột đơn vị thì lấy từ
   tiêu đề văn bản (vd "Tên Cơ quan, đơn vị: ..." hoặc "Danh sách ... của ...").
 - **Tổ chức**: tên chính thức hiện nay của tỉnh/thành cấp 1, viết hoa toàn
   bộ (vd `THÀNH PHỐ CẦN THƠ`). Tự quy tên tỉnh cũ về tỉnh mới theo bảng 34
