@@ -139,7 +139,10 @@ def _strip_accents_lower(text: str) -> str:
     text = str(text).replace("đ", "d").replace("Đ", "D")
     text = unicodedata.normalize("NFD", text)
     text = "".join(ch for ch in text if unicodedata.category(ch) != "Mn")
-    return text.lower().strip()
+    # Gop moi khoang trang/xuong dong thanh 1 dau cach: tieu de o PDF hay bi
+    # ngat dong giua cum ("Số điện\nthoại sử\ndụng Zalo") - neu khong cum
+    # "so dien thoai" khong khop va ca cot SDT bi bo (Phu Tho Nguyet Duc, Che do 1).
+    return re.sub(r"\s+", " ", text.lower()).strip()
 
 
 def _deaccent_keep_len(text: str) -> str:
@@ -274,18 +277,59 @@ def normalize_email(raw):
     thieu hoan toan (vd khong the tu dien ten mien neu no bi mat han)."""
     if not raw:
         return None
+    if _has_ambiguous_space_in_local(raw):
+        return None
     raw = re.sub(r"\s+", "", str(raw))
 
     match = EMAIL_REGEX.search(raw)
-    if match and not _has_empty_email_label(match.group(0)):
+    if match and not _has_empty_email_label(match.group(0)) and not _is_cut_mid_word(raw, match):
         return _fix_gmail_domain(match.group(0).lower())
 
     repaired = _repair_email_typos(raw)
     match2 = EMAIL_REGEX.search(repaired)
-    if match2 and not _has_empty_email_label(match2.group(0)):
+    if match2 and not _has_empty_email_label(match2.group(0)) and not _is_cut_mid_word(repaired, match2):
         return match2.group(0).lower()
 
     return None
+
+
+_EMAIL_CELL_CHARS_RE = re.compile(r"[A-Za-z0-9._%+\-@,\s]+")
+_SPACE_BETWEEN_ALNUM_RE = re.compile(r"(?<=[A-Za-z0-9])[ \t]+(?=[A-Za-z0-9])")
+
+
+def _has_ambiguous_space_in_local(raw):
+    """True neu phan TRUOC '@' co dau cach/tab nam GIUA 2 chu/so (vd
+    'qthoang thongnhat@phutho.gov.vn', 'Nhen.BT daidong@...' - Phu Tho): rat
+    co the thieu dau cham ('qthoang.thongnhat@') nen noi lien se ra dia chi
+    SAI/khong ton tai mot cach am tham -> loai ('Email sai dinh dang').
+    Chi xet khi CA O chi gom ky tu email va khoang trang (khong lan ten/nhan
+    kieu 'Email: abc@'). Van noi lien nhu cu khi:
+      - ten mien la Gmail (Gmail bo qua dau cham trong ten);
+      - phan sau dau cach chi toan chu so ('hdkhang 1 @cantho.gov.vn' ->
+        'hdkhang1@': nguoi dung go thua dau cach truoc so thu tu).
+    Xuong dong (PDF ngat dong trong o: 'Thuanlv.nguyetduc@phuth\\no.gov.vn')
+    va dau cach sat '@'/'.' khong bi tinh."""
+    s = str(raw)
+    if "@" not in s or not _EMAIL_CELL_CHARS_RE.fullmatch(s):
+        return False
+    local, _, domain = s.partition("@")
+    local = local.strip(" \t\r\n")
+    if not _SPACE_BETWEEN_ALNUM_RE.search(local):
+        return False
+    if re.sub(r"\s+", "", domain).lower().startswith("gmail"):
+        return False
+    pieces = re.split(r"[ \t]+", local)
+    # moi cho co dau cach (tru phan chi toan chu so) la mo ho
+    return any(not p.isdigit() for p in pieces[1:])
+
+
+def _is_cut_mid_word(text, match):
+    """True neu ky tu NGAY TRUOC phan khop email la chu/so (ke ca chu co dau):
+    dia chi bi CAT GIUA TU. Nguoi nhap go tieng Viet co dau trong email
+    ('thươngpv.xaxuanhong@...' / 'hoangminhhảo1992@gmail.com') - regex chi
+    khop duoc phan duoi ('ngpv.xaxuanhong@...', 'o1992@gmail.com') nen se xuat
+    ra dia chi vo nghia. 'Email:abc@', '(abc@' van dung."""
+    return match.start() > 0 and text[match.start() - 1].isalnum()
 
 
 def normalize_phone(raw):
@@ -599,6 +643,18 @@ def merge_wrapped_continuation_rows(rows, name_col_idx, stt_col_idx=None):
         name_is_empty = not (name_val and str(name_val).strip())
         has_any_data = any((c and str(c).strip()) for c in row)
 
+        # Chot chan: 2 dong cung co EMAIL day du la 2 nguoi khac nhau, KHONG
+        # noi (noi se ra email rac kieu "thuongct@...vntranntt" - Gia Lai
+        # PDF: ten lech cot khien moi dong bi coi la "dong bi ngat"). Dong
+        # nay vao xu ly rieng (thieu ten -> Can kiem tra) thay vi lam hong
+        # email cua nguoi truoc.
+        if merged and name_is_empty and has_any_data:
+            prev_cells = merged[-1]
+            if any(idx < len(prev_cells) and "@" in _cell_str(prev_cells[idx]) and "@" in _cell_str(cell)
+                   for idx, cell in enumerate(row)):
+                merged.append(row)
+                continue
+
         if merged and name_is_empty and has_any_data:
             prev = merged[-1]
             for idx in range(min(len(prev), len(row))):
@@ -612,6 +668,227 @@ def merge_wrapped_continuation_rows(rows, name_col_idx, stt_col_idx=None):
         # dong hoan toan rong (khong co du lieu o bat ky cot nao) -> bo qua
 
     return merged
+
+
+# Moi o tieu de "phu" toi da bay nhieu cot (o tieu de gop o trong PDF/Word).
+_HEADER_SPAN_MAX = 3
+
+
+def collapse_header_spans(data_rows, header, col_map, stt_idx=None):
+    """O TIEU DE GOP O: pdfplumber tra tieu de 'Họ và tên' o cot 3, nhung cot
+    4, 5 (cung nam duoi o gop do) bi None; du lieu that nam o cot 4 (Gia Lai
+    PDF: 15 cot, ten o cot 4, email o cot 9 voi 7 dong dau nhung cot 10 voi
+    2 dong cuoi). Doc theo dung 1 vi tri cot se thay cot Ten rong o MOI dong
+    -> moi dong bi coi la 'dong bi ngat' va ghep het vao dong dau.
+
+    Moi o tieu de bao phu cac cot toi o tieu de ke tiep (toi da
+    _HEADER_SPAN_MAX). CHI thu gon khi co bang chung du lieu that nam LECH
+    trong vung (>= 2 dong co o cot tieu de rong nhung o khac trong vung co
+    gia tri) - bang binh thuong khong bi dong vao. Thu gon = dua gia tri
+    dau tien trong vung ve cot tieu de, de moi ham phia sau doc nhu cu."""
+    fields = dict(col_map)
+    if stt_idx is not None:
+        fields["stt"] = stt_idx
+    non_empty = [i for i, c in enumerate(header) if _cell_str(c)]
+    spans = {}
+    for field, idx in fields.items():
+        nxt = next((i for i in non_empty if i > idx), None)
+        end = min(nxt if nxt is not None else len(header), idx + _HEADER_SPAN_MAX)
+        if end - idx > 1:
+            spans[field] = (idx, end)
+    if not spans:
+        return data_rows
+
+    active = {}
+    for field, (a, b) in spans.items():
+        off = sum(1 for r in data_rows
+                  if r and a < len(r) and not _cell_str(r[a]) and any(_cell_str(c) for c in r[a + 1:b]))
+        if off >= 2:
+            active[field] = (a, b)
+    if not active:
+        return data_rows
+
+    out = []
+    for r in data_rows:
+        r = list(r) if r is not None else r
+        if r:
+            for a, b in active.values():
+                if a < len(r) and not _cell_str(r[a]):
+                    for j in range(a + 1, min(b, len(r))):
+                        if _cell_str(r[j]):
+                            r[a], r[j] = r[j], None
+                            break
+        out.append(r)
+    return out
+
+
+def _digits(value):
+    return re.sub(r"\D", "", _cell_str(value))
+
+
+def _is_name_fragment_row(row, prev, name_idx, phone_idx):
+    """Dong chi chua 1 TU cua ho ten (phan sau cua ten bi ngat 2 dong) - xem
+    merge_name_fragment_rows."""
+    if name_idx >= len(row) or name_idx >= len(prev):
+        return False
+    word = _cell_str(row[name_idx])
+    prev_name = _cell_str(prev[name_idx])
+    if not word or " " in word or not word.isalpha() or _GROUP_UNIT_START_RE.match(word):
+        return False
+    # Ho ten viet hoa toan bo thi tiep theo cung phai viet hoa toan bo; nguoc
+    # lai 1 tu viet hoa ("KHỐI") khong phai la phan tiep cua ten thuong.
+    if word.isupper() != prev_name.isupper():
+        return False
+    if not prev_name or len(prev_name.split()) > 3:
+        return False
+    if not any(("@" in _cell_str(c)) or _digits(c) for i, c in enumerate(prev) if i != name_idx):
+        return False  # dong truoc khong phai 1 nguoi that (khong email/SDT)
+    for i, c in enumerate(row):
+        if i == name_idx or not _cell_str(c):
+            continue
+        # O khac duoc phep: CHI SDT trung SDT dong truoc (Gia Lai: 'Khánh' +
+        # '0914099910' lap lai SDT cua 'Trần Quốc').
+        if i == phone_idx and _digits(c) and _digits(c) == _digits(prev[i] if i < len(prev) else ""):
+            continue
+        return False
+    return True
+
+
+def merge_name_fragment_rows(rows, name_idx, phone_idx=None, stt_idx=None):
+    """HO TEN BI NGAT 2 DONG VAT LY (Gia Lai PDF): pdfplumber tach 'Cao Thanh
+    Thương' thanh dong 'Cao Thanh' (day du email/SDT) + dong ke tiep chi co
+    'Thương' (nhieu khi kem SDT lap lai). Dong thu 2 KHONG phai tieu de nhom
+    hay nguoi moi - noi vao ho ten dong truoc.
+
+    Rat than trong, chi noi khi TAT CA dung: dong chi co DUNG 1 TU (chu cai)
+    o cot ten, cac o khac rong (hoac chi la SDT lap lai), dong truoc la
+    nguoi that (co email/SDT) va ten <= 3 tu, khong phai ten co quan, cung
+    kieu viet hoa. Tra ve (rows_moi, [STT cac dong da noi])."""
+    if not rows or name_idx is None:
+        return rows, []
+    out, joined = [], []
+    for row in rows:
+        row = list(row) if row is not None else row
+        if out and row and _is_name_fragment_row(row, out[-1], name_idx, phone_idx):
+            prev = out[-1]
+            prev[name_idx] = f"{_cell_str(prev[name_idx])} {_cell_str(row[name_idx])}"
+            stt = parse_stt(prev[stt_idx]) if stt_idx is not None and stt_idx < len(prev) else None
+            joined.append(stt if stt is not None else _cell_str(prev[name_idx]))
+            continue
+        out.append(row)
+    return out, joined
+
+
+# ---------------------------------------------------------------------------
+# EMAIL BI CAT THEO VIEN O BANG PDF (Phu Tho - Nguyet Duc: 9 nguoi)
+# ---------------------------------------------------------------------------
+_EMAIL_FRAGMENT_RE = re.compile(r"[A-Za-z0-9._%+\-]+")
+_RECOVER_LINE_GAP = 16      # khoang cach toi da (pt) giua 2 dong cua cung 1 email
+_RECOVER_COL_TOL = 3        # lech cot toi da (pt) giua cac manh cua cung 1 email
+
+
+def _dominant_email_domain(tables, min_count=3):
+    """Ten mien pho bien nhat trong cac email DAY DU cua bang (>= min_count lan)."""
+    counts = {}
+    for table in tables:
+        for row in table:
+            for cell in row or ():
+                if cell and "@" in str(cell):
+                    e = normalize_email(cell)
+                    if e:
+                        d = e.split("@", 1)[1]
+                        counts[d] = counts.get(d, 0) + 1
+    if not counts:
+        return None
+    domain, n = max(counts.items(), key=lambda kv: kv[1])
+    return domain if n >= min_count else None
+
+
+def _assemble_cut_email(words, start, phone_digits, domain):
+    """Noi cac tu CUNG COT o cac dong ngay duoi `start` thanh 1 email (PDF xen
+    ke cac cot nen khong the noi van ban tho don gian). Dung khi chuoi da ket
+    thuc bang ten mien pho bien, hoac gap tu chua '@' khong bat dau bang '@'
+    (email cua dong sau)."""
+    def clean(text):
+        # SDT cua CHINH dong nay bi dinh vao cuoi tu: 'Huypq.nguyetduc@phutho.0387875219'
+        m = re.search(r"\d{3,}$", text)
+        if m and phone_digits.startswith(m.group()):
+            return text[:m.start()]
+        return text
+
+    parts = [clean(start["text"])]
+    prev = start
+    for _ in range(4):
+        joined = "".join(parts)
+        if "@" in joined and joined.lower().endswith(domain):
+            break
+        nxt = [w for w in words if w is not start and abs(w["x0"] - start["x0"]) < _RECOVER_COL_TOL
+               and prev["top"] + 1 < w["top"] <= prev["top"] + _RECOVER_LINE_GAP]
+        if not nxt:
+            break
+        w = min(nxt, key=lambda x: x["top"])
+        if "@" in w["text"] and not w["text"].startswith("@"):
+            break
+        parts.append(clean(w["text"]))
+        prev = w
+    return "".join(parts)
+
+
+def repair_cut_email_cells(page_tables, get_words):
+    """KHOI PHUC EMAIL BI CAT THEO VIEN O: voi 1 so dong, pdfplumber nhan nham
+    vien cot email chi rong ~31pt trong khi email that keo dai sang cot SDT;
+    o email trong bang chi con manh dau ('Hainv', 'Huypq', 'dthuong21'...),
+    phan con lai nam NGOAI bang (van ban tho xen ke cac cot nen khong noi
+    duoc). Doc toa do tung tu (page.extract_words) de noi lai.
+
+    page_tables: list (moi trang) cac bang (list rows) cua trang do; get_words(i)
+    tra ve extract_words() cua trang i (chi goi khi trang co dong can sua).
+    SUA TAI CHO o email cua cac bang. Rat than trong - chi nhan khi:
+      - dong KHONG co o nao chua '@', va co 1 o (cot >= 2) la 1 manh toan ky
+        tu email, co chu cai;
+      - tim duoc tu tren trang BAT DAU bang manh, noi cac tu cung cot ben
+        duoi thanh email hop le;
+      - ten mien == ten mien pho bien nhat cua tep (>= 3 lan) va phan truoc
+        '@' bat dau bang manh.
+    Khong du dieu kien thi de nguyen (dong van vao 'Thieu email' nhu cu).
+    Tra ve list (STT, email) da khoi phuc."""
+    all_tables = [t for tables in page_tables for t in tables]
+    domain = _dominant_email_domain(all_tables)
+    if not domain:
+        return []
+    recovered = []
+    for page_idx, tables in enumerate(page_tables):
+        words, used = None, set()
+        for table in tables:
+            for row in table:
+                if not row or len(row) < 3 or any(c and "@" in str(c) for c in row):
+                    continue
+                frag_idx = next((i for i in range(2, len(row))
+                                 if row[i] and _EMAIL_FRAGMENT_RE.fullmatch(str(row[i]).strip())
+                                 and re.search(r"[A-Za-z]", str(row[i])) and not str(row[i]).strip().isdigit()
+                                 and len(str(row[i]).strip()) >= 3), None)
+                if frag_idx is None:
+                    continue
+                frag = str(row[frag_idx]).strip()
+                phone_digits = ""
+                for i, c in enumerate(row):
+                    if i != frag_idx and c and normalize_phone(c):
+                        phone_digits = re.sub(r"\D", "", str(c))
+                        break
+                if words is None:
+                    words = get_words(page_idx)
+                starts = [w for w in words if w["text"].startswith(frag) and id(w) not in used]
+                # uu tien tu ma ky tu ngay sau manh la '.' hoac '@' (Hainv|.nguyetduc@...)
+                starts.sort(key=lambda w: 0 if len(w["text"]) == len(frag) or w["text"][len(frag)] in ".@" else 1)
+                for start in starts:
+                    cand = _assemble_cut_email(words, start, phone_digits, domain)
+                    email = normalize_email(cand)
+                    if email and email.endswith("@" + domain) and email.startswith(frag.lower()):
+                        row[frag_idx] = email
+                        used.add(id(start))
+                        recovered.append((str(row[0] or "").strip(), email))
+                        break
+    return recovered
 
 
 def find_header_row(rows, max_scan=15):
@@ -889,6 +1166,9 @@ def extract_from_table_rows(rows, row_stats=None, source_label="", seen_stts=Non
     skip_idxs = {i for i in (stt_idx, name_idx) if i is not None}
 
     data_rows = rows[header_idx + 1:]
+    if not inferred:
+        # O tieu de gop o (Gia Lai PDF) - xem collapse_header_spans.
+        data_rows = collapse_header_spans(data_rows, rows[header_idx], col_map, stt_idx)
     # Ghi nhan STT cua MOI dong TRUOC khi gop dong bi ngat - ke ca dong se
     # bi gop vao dong tren (vd Dong Thap STT 910 chi chua duoi email cua
     # 909). Chi STT VANG MAT HOAN TOAN khoi bang moi la dau hieu mat dong;
@@ -904,7 +1184,21 @@ def extract_from_table_rows(rows, row_stats=None, source_label="", seen_stts=Non
     # dung cho Excel/CSV (merge_wrapped=False) va bang suy ra cot (thuong la
     # Excel khong tieu de) - dong thieu ten o do la loi du lieu that.
     if merge_wrapped and not inferred:
+        # Ho ten bi ngat 2 dong (1 tu cuoi o dong rieng) noi TRUOC, neu khong
+        # dong do bi hieu la nguoi moi/tieu de nhom.
+        data_rows, joined = merge_name_fragment_rows(data_rows, name_idx, col_map.get("phone"), stt_idx)
+        if joined:
+            add_warning(row_stats, f"{source_label}: đã nối {len(joined)} họ tên bị ngắt thành 2 dòng "
+                                   f"({format_stt_list([j for j in joined if isinstance(j, int)]) or 'không có STT'}) "
+                                   "- hãy đối chiếu họ tên với tệp gốc.")
+        n_before = sum(1 for r in data_rows if r and any(_cell_str(c) for c in r))
         data_rows = merge_wrapped_continuation_rows(data_rows, name_idx, stt_idx)
+        n_merged = n_before - len(data_rows)
+        # Phan lon dong bi coi la "ngat dong" thuong do cot Ho ten bi LECH (rong
+        # o moi dong), khong phai PDF ngat dong that - nhac nguoi dung kiem tra.
+        if n_merged >= 3 and n_merged >= 0.3 * n_before:
+            add_warning(row_stats, f"{source_label}: {n_merged}/{n_before} dòng bị ghép vào dòng trên vì cột "
+                                   "Họ và tên trống - có thể cột tên bị lệch, hãy đối chiếu tệp gốc.")
 
     records = []
     row_number = 0
@@ -1070,6 +1364,85 @@ def _rows_from_xlrd_sheet(sheet):
     return rows
 
 
+# ---------------------------------------------------------------------------
+# NHIEU SHEET: bo sheet TRUNG (ban nhap, phu luc) - dung chung 2 che do
+# ---------------------------------------------------------------------------
+# Sheet co >= 3 email ma >= 50% da xuat hien o cac sheet TRUOC la ban nhap/
+# phu luc chu khong phai danh sach moi (Thai Nguyen "Trang_tinh1": 62/94
+# trung; Son La "DANH SACH DAU MOI TRIEN KHAI": 69/86 trung - 16 nguoi dau
+# moi la nguoi lien he, KHONG phai nguoi dang ky, nhung bi them vao ket qua
+# va 119 dong nhieu vao "Can kiem tra"). Doc mu quang moi sheet thi sai,
+# chi doc sheet dang mo (cu) thi MAT nguoi that (TTYT Bac Ai: 2 sheet khac
+# nhau hoan toan, moi sheet 1 co quan).
+SHEET_SKIP_MIN_EMAILS = 3
+SHEET_SKIP_OVERLAP = 0.5
+_SHEET_EMAIL_RE = re.compile(r"[\w.+\-]+@[\w\-]+(?:\.[\w\-]+)+")
+
+
+def sheet_emails(rows):
+    """Tap email (viet thuong) xuat hien trong 1 sheet."""
+    found = set()
+    for row in rows:
+        for cell in row or ():
+            if cell is None:
+                continue
+            text = str(cell)
+            if "@" in text:
+                for m in _SHEET_EMAIL_RE.finditer(re.sub(r"\s+", "", text)):
+                    found.add(m.group(0).lower())
+    return found
+
+
+def analyze_sheets(sheets):
+    """sheets: [(ten_sheet, rows), ...] theo thu tu. Tra ve list dict
+    {sheet, rows, emails (so luong), overlap (so email da co o sheet truoc),
+    skip (True neu nen bo qua)}. Email cua sheet bi bo van tinh vao 'da
+    thay' cho cac sheet sau."""
+    seen = set()
+    result = []
+    for name, rows in sheets:
+        emails = sheet_emails(rows)
+        overlap = len(emails & seen)
+        skip = len(emails) >= SHEET_SKIP_MIN_EMAILS and overlap >= SHEET_SKIP_OVERLAP * len(emails)
+        result.append({"sheet": name, "rows": rows, "emails": len(emails), "overlap": overlap, "skip": skip})
+        seen |= emails
+    return result
+
+
+def sheet_skip_reason(info):
+    return f"trùng {info['overlap']}/{info['emails']} email với sheet trước"
+
+
+def read_excel_sheets(path):
+    """Doc MOI sheet cua tep Excel (.xlsx/.xlsm/.xls) -> [(ten_sheet, rows)].
+    Giu nguyen ten sheet (ke ca dau cach thua o cuoi)."""
+    ext = os.path.splitext(path)[1].lower()
+    if ext == ".xls":
+        import xlrd
+        _patch_xlrd_tolerant_datemode()
+        wb = xlrd.open_workbook(path)
+        return [(s.name, _rows_from_xlrd_sheet(s)) for s in wb.sheets()]
+    wb = openpyxl.load_workbook(path, data_only=True)
+    return [(ws.title, [list(r) for r in ws.iter_rows(values_only=True)]) for ws in wb.worksheets]
+
+
+def list_excel_sheets(path):
+    """Cac sheet CO IT NHAT 1 EMAIL cua tep Excel, theo thu tu:
+    [{sheet, emails, overlap_with_previous, suggest_skip}]. Tep khong phai
+    Excel -> []. Sheet khong co email (danh muc...) khong duoc liet ke."""
+    if os.path.splitext(path)[1].lower() not in (".xls", ".xlsx", ".xlsm"):
+        return []
+    return [{"sheet": i["sheet"], "emails": i["emails"], "overlap_with_previous": i["overlap"],
+             "suggest_skip": i["skip"]}
+            for i in analyze_sheets(read_excel_sheets(path)) if i["emails"] > 0]
+
+
+def _skip_warning(base_label, info):
+    return (f"{base_label} [Sheet: {info['sheet']}]: bỏ qua sheet này vì {sheet_skip_reason(info)} "
+            f"(có thể là bản nháp/phụ lục); {info['emails'] - info['overlap']} email mới trong sheet "
+            "không được đọc. Nếu cần, hãy tách sheet đó thành tệp riêng.")
+
+
 def read_xls_file(path, row_stats=None, source_label=None):
     """
     Doc file Excel 97-2003 (.xls - dinh dang nhi phan cu, KHAC voi .xlsx).
@@ -1087,11 +1460,14 @@ def read_xls_file(path, row_stats=None, source_label=None):
     all_records = []
     try:
         wb = xlrd.open_workbook(path)
-        for sheet in wb.sheets():
-            rows = _rows_from_xlrd_sheet(sheet)
+        for info in analyze_sheets([(s.name, _rows_from_xlrd_sheet(s)) for s in wb.sheets()]):
+            if info["skip"]:
+                add_warning(row_stats, _skip_warning(base_label, info))
+                continue
+            rows = info["rows"]
             while rows and all(c in (None, "") for c in rows[0]):
                 rows.pop(0)
-            sheet_label = f"{base_label} [Sheet: {sheet.name}]"
+            sheet_label = f"{base_label} [Sheet: {info['sheet']}]"
             seen = set()
             all_records.extend(extract_from_table_rows(rows, row_stats=row_stats, source_label=sheet_label,
                                                        seen_stts=seen, merge_wrapped=False))
@@ -1262,14 +1638,17 @@ def _convert_xls_via_libreoffice(path):
 
 def read_excel_file(path, row_stats=None, source_label=None):
     base_label = source_label or os.path.basename(path)
-    wb = openpyxl.load_workbook(path, data_only=True)
+    sheets = read_excel_sheets(path)
     all_records = []
-    for ws in wb.worksheets:
-        rows = [list(row) for row in ws.iter_rows(values_only=True)]
+    for info in analyze_sheets(sheets):
+        if info["skip"]:
+            add_warning(row_stats, _skip_warning(base_label, info))
+            continue
+        rows = info["rows"]
         # Bo cac dong trong hoan toan o dau
         while rows and all(c in (None, "") for c in rows[0]):
             rows.pop(0)
-        sheet_label = f"{base_label} [Sheet: {ws.title}]" if len(wb.worksheets) > 1 else base_label
+        sheet_label = f"{base_label} [Sheet: {info['sheet']}]" if len(sheets) > 1 else base_label
         seen = set()
         all_records.extend(extract_from_table_rows(rows, row_stats=row_stats, source_label=sheet_label,
                                                    seen_stts=seen, merge_wrapped=False))
@@ -1389,14 +1768,22 @@ def read_pdf_file(path, row_stats=None, source_label=None):
                            # doan nham khi PDF ngat dong giua o bang).
     page_texts = []  # van ban tho MOI trang - chi dung de khoi phuc STT bi mat
     with pdfplumber.open(path) as pdf:
+        per_page_tables = []
         for page in pdf.pages:
             page_tables = page.extract_tables() or []
             page_text = page.extract_text() or ""
             page_texts.append(page_text)
-            if page_tables:
-                raw_tables.extend(page_tables)
-            else:
+            per_page_tables.append(page_tables)
+            if not page_tables:
                 free_text_parts.append(page_text)
+        # Email bi cat theo vien o bang (Phu Tho Nguyet Duc): noi lai tu toa do tu.
+        fixed = repair_cut_email_cells(per_page_tables, lambda i: pdf.pages[i].extract_words())
+        if fixed:
+            add_warning(row_stats, f"{label}: khôi phục {len(fixed)} email bị cắt theo viền ô bảng PDF "
+                                   f"(STT {format_stt_list([n for n in (parse_stt(s) for s, _e in fixed) if n])}) "
+                                   "- hãy đối chiếu email với tệp gốc.")
+        for tables in per_page_tables:
+            raw_tables.extend(tables)
 
     seen = set()
     for logical_table in merge_multi_page_tables(raw_tables):

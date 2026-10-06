@@ -61,14 +61,22 @@ Mỗi chế độ giữ riêng tệp đã chọn và kết quả xem trước; c
 mất dữ liệu của tab kia. File mẫu mặc định tự đổi theo chế độ.
 
 **Chế độ 2 xử lý nhiều tệp cùng lúc:**
-- Mỗi tệp có ô **"Tổ chức mặc định"** riêng, vì các tệp trong một lần xử lý có
-  thể thuộc các tỉnh khác nhau. Tệp mới thêm lấy giá trị đang có trong ô nhập.
-  Muốn đổi thì chọn tệp, sửa ô rồi bấm **"Gán"**. Không chọn tệp nào thì
-  "Gán" áp dụng cho tất cả.
-- Kết quả **gộp vào 1 tệp**. Tệp "Cần kiểm tra" có thêm cột **Tệp nguồn**.
-- Chỉ **lọc trùng email trong từng tệp**, nên kết quả mỗi tệp giống hệt khi
-  chạy riêng. Nếu một email xuất hiện ở nhiều tệp, tool không tự loại mà chỉ
-  cảnh báo để bạn tự quyết.
+- Mỗi tệp (hoặc mỗi sheet Excel, xem dưới) có ô **"Tổ chức mặc định"** riêng,
+  vì các tệp trong một lần xử lý có thể thuộc các tỉnh khác nhau. Tệp mới thêm
+  lấy giá trị đang có trong ô nhập. Muốn đổi thì chọn dòng, sửa ô rồi bấm
+  **"Gán"**. Không chọn dòng nào thì "Gán" áp dụng cho tất cả.
+- **Tệp Excel có nhiều sheet** (mỗi sheet có email) được **tách thành mỗi sheet
+  một dòng**, để mỗi sheet có Tổ chức riêng (vd 1 tệp gộp 2 cơ quan ở 2 tỉnh).
+  Sheet **trùng từ 50% email trở lên** với sheet trước (bản nháp, phụ lục) mặc
+  định **"Bỏ qua"** (dòng tô xám); chọn dòng rồi bấm **"Dùng / Bỏ sheet"** (hoặc
+  nhấp đúp) để đổi. Nhật ký ghi sheet nào đã bỏ và có bao nhiêu email mới bị bỏ
+  theo. Chế độ 1 cũng tự bỏ sheet trùng và báo cảnh báo.
+- Kết quả **gộp vào 1 tệp**. Tệp "Cần kiểm tra" có thêm cột **Tệp nguồn** và
+  **Ghi chú**.
+- **Lọc trùng email trên toàn bộ lô, kể cả khác tệp/sheet.** Người bị loại vào
+  "Cần kiểm tra" kèm ghi chú trùng với **dòng nào, tệp nào** (vd "Trùng email
+  với dòng 24 - Lừ Thị Chuyên (tệp SonLa.xlsx)"; dòng ghi theo số dòng trong
+  Excel, kèm STT nếu có).
 - Tệp nào đọc lỗi thì tool báo cảnh báo và vẫn xử lý tiếp các tệp còn lại.
 
 **Mật khẩu mặc định** (`Copenai@2026`) dùng chung cho cả 2 chế độ, có thể sửa
@@ -79,7 +87,10 @@ mất dữ liệu của tab kia. File mẫu mặc định tự đổi theo chế
 1. **Email**: viết thường, bỏ khoảng trắng/xuống dòng. Tự sửa **lỗi gõ phím rõ
    ràng**: dấu phẩy thay dấu chấm (`@gmail,com` → `@gmail.com`), 2 dấu chấm
    liền nhau, dấu chấm ngay trước/sau `@`. Email **thiếu hẳn** `@` hoặc thiếu
-   tên miền (vd `nvgiang`) → **loại bỏ bản ghi**, không tự đoán.
+   tên miền (vd `nvgiang`) → **loại bỏ bản ghi**, không tự đoán. Email có **dấu cách giữa
+   phần tên** (vd `qthoang thongnhat@...`, có thể thiếu dấu chấm) hoặc **bị cắt giữa từ**
+   do gõ chữ có dấu (`thươngpv@...`) cũng bị loại và hiện trong "Cần kiểm tra".
+   Email bị cắt theo viền ô bảng PDF được tool tự khôi phục từ toạ độ chữ, kèm cảnh báo.
 2. **Số điện thoại**: chuẩn theo định dạng Việt Nam (10 số, bắt đầu bằng 0);
    tự xử lý `+84`/`84`, thiếu số 0 đầu. Ô có nhiều số → lấy số hợp lệ đầu
    tiên. Không chuẩn hoá được → để trống (vẫn giữ bản ghi, chỉ email mới bắt
@@ -93,7 +104,9 @@ mất dữ liệu của tab kia. File mẫu mặc định tự đổi theo chế
 
 **Riêng chế độ 2** có thêm 2 quy tắc:
 - **Đơn vị**: `<cấp hành chính> <tên riêng> - <tỉnh/thành>` (vd `UBND phường
-  Ninh Kiều` → `Phường Ninh Kiều - Cần Thơ`). Đơn vị cấp dưới xã/phường (phòng,
+  Ninh Kiều` → `Phường Ninh Kiều - Cần Thơ`). Ô đơn vị chỉ ghi chức vụ ("Phó
+  Giám đốc Sở") thì lấy cơ quan ban hành ở đầu văn bản (vd `Sở Nông nghiệp và
+  Môi trường - Gia Lai`). Đơn vị cấp dưới xã/phường (phòng,
   ban, trung tâm, Đảng ủy, trạm y tế...) được gộp về chính xã/phường đó (vd
   `Phòng VHXH xã Tả Phìn` → `Xã Tả Phìn - Lào Cai`); "thị xã", "hợp tác xã",
   "Xã hội" không bị gộp. Không có cột đơn vị thì lấy từ
@@ -119,6 +132,9 @@ Tool còn tự phát hiện các dấu hiệu **mất dữ liệu âm thầm** v
 - **Cả cột SĐT (hoặc Đơn vị) trống** trên mọi bản ghi — thường do tiêu đề cột
   lạ, tool không nhận ra cột.
 - **Bảng có email nhưng không nhận ra tiêu đề cột** nên bị bỏ qua.
+- **Sheet Excel bị bỏ qua** vì trùng với sheet trước, **họ tên bị ngắt thành 2
+  dòng đã được nối lại** (PDF), hoặc **nhiều dòng bị ghép** vì cột Họ và tên
+  trống.
 
 "0 dòng cần kiểm tra" chưa chắc đã đúng — hãy luôn đọc các cảnh báo này.
 

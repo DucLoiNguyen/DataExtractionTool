@@ -87,10 +87,10 @@ M2_PREVIEW_HEADINGS = {"name": "Tên tài khoản", "email": "Email", "password"
 M2_SORTABLE = {"name": "name", "email": "email", "phone": "phone", "don_vi": "don_vi", "to_chuc": "to_chuc",
                "source": "source"}
 
-M2_ISSUE_COLUMNS = ("source", "stt", "raw_name", "raw_email", "raw_phone", "raw_unit", "reason")
+M2_ISSUE_COLUMNS = ("source", "stt", "raw_name", "raw_email", "raw_phone", "raw_unit", "note", "reason")
 M2_ISSUE_HEADINGS = {
     "source": "Tệp nguồn", "stt": "STT", "raw_name": "Họ và tên (gốc)", "raw_email": "Email (gốc)",
-    "raw_phone": "Điện thoại (gốc)", "raw_unit": "Đơn vị công tác (gốc)", "reason": "Lý do",
+    "raw_phone": "Điện thoại (gốc)", "raw_unit": "Đơn vị công tác (gốc)", "note": "Ghi chú", "reason": "Lý do",
 }
 M2_ISSUE_SORTABLE = {"source": "source", "stt": "stt", "raw_name": "raw_name", "reason": "reason"}
 
@@ -273,7 +273,7 @@ class ResultPanel:
         itree_inner.pack(fill="both", expand=True, padx=1, pady=1)
 
         self.issues_tree = ttk.Treeview(itree_inner, columns=self.issue_columns, show="headings", height=11)
-        widths = {"source": 190, "row_number": 55, "stt": 55}
+        widths = {"source": 190, "row_number": 55, "stt": 55, "note": 300}
         for col in self.issue_columns:
             if col in self.issue_sortable:
                 self.issues_tree.heading(col, text=issue_headings[col],
@@ -509,8 +509,11 @@ class ContactExtractorGUI(tk.Tk):
         self.mode1_input_path = tk.StringVar()
         # Che do 2: nhieu tep, moi tep 1 "To chuc mac dinh" rieng (cac tep
         # trong 1 lo co the thuoc cac tinh khac nhau). Giu thu tu them tep.
-        self.mode2_paths = []
-        self.mode2_to_chuc = {}  # duong dan -> to chuc mac dinh
+        # Moi phan tu: {path, sheet, to_chuc, emails, skip, reason}. Tep Excel co
+        # >= 2 sheet co email duoc TACH thanh moi sheet 1 dong (moi sheet 1 To
+        # chuc rieng - 1 tep co the chua 2 co quan o 2 tinh khac nhau); sheet
+        # trung >= 50% email voi sheet truoc mac dinh skip=True (khong doc).
+        self.mode2_sources = []
         self.to_chuc_var = tk.StringVar()
 
         self.base_font_family = _pick_font(["Segoe UI", "Helvetica Neue", "Helvetica", "Arial"])
@@ -765,14 +768,16 @@ class ContactExtractorGUI(tk.Tk):
         tree_wrap.pack(fill="both", expand=True)
         m2_inner = tk.Frame(tree_wrap, bg=COLOR_CARD)
         m2_inner.pack(fill="both", expand=True, padx=1, pady=1)
-        self.m2_tree = ttk.Treeview(m2_inner, columns=("file", "to_chuc"), show="headings",
+        self.m2_tree = ttk.Treeview(m2_inner, columns=("src", "emails", "to_chuc", "status"), show="headings",
                                     height=6, selectmode="extended")
-        self.m2_tree.heading("file", text="Tệp")
-        self.m2_tree.heading("to_chuc", text="Tổ chức mặc định")
-        self.m2_tree.column("file", width=190, minwidth=80, anchor="w")
-        self.m2_tree.column("to_chuc", width=115, minwidth=60, anchor="w")
+        for col, text, width, anchor in (("src", "Tệp / Sheet", 150, "w"), ("emails", "Email", 42, "center"),
+                                         ("to_chuc", "Tổ chức mặc định", 85, "w"), ("status", "Trạng thái", 62, "w")):
+            self.m2_tree.heading(col, text=text)
+            self.m2_tree.column(col, width=width, minwidth=36, anchor=anchor)
+        self.m2_tree.tag_configure("skipped", foreground=COLOR_TEXT_MUTED)
         _attach_scrollbars(m2_inner, self.m2_tree, horizontal=False)
         self.m2_tree.bind("<<TreeviewSelect>>", self._on_mode2_select)
+        self.m2_tree.bind("<Double-1>", lambda e: self.after_idle(self.toggle_mode2_sheet))
         btns_m2 = ttk.Frame(self.m2_file_frame, style="Card.TFrame")
         btns_m2.pack(fill="x", pady=(8, 0))
         for i in range(3):
@@ -783,6 +788,11 @@ class ContactExtractorGUI(tk.Tk):
                    command=self.remove_mode2_selected).grid(row=0, column=1, sticky="ew", padx=4)
         ttk.Button(btns_m2, text="\U0001F9F9 Xoá hết", style="Secondary.TButton",
                    command=self.clear_mode2_files).grid(row=0, column=2, sticky="ew", padx=(4, 0))
+        ttk.Button(btns_m2, text="⇄ Dùng / Bỏ sheet đã chọn (nhấp đúp)", style="Secondary.TButton",
+                   command=self.toggle_mode2_sheet).grid(row=1, column=0, columnspan=3, sticky="ew", pady=(6, 0))
+        self.m2_detail_var = tk.StringVar(value="")
+        ttk.Label(self.m2_file_frame, textvariable=self.m2_detail_var, style="Muted.TLabel",
+                  wraplength=330).pack(anchor="w", pady=(6, 0))
 
         ttk.Label(self.m2_file_frame, text="Tổ chức mặc định (tỉnh/thành, không tiền tố):",
                   style="Card.TLabel").pack(anchor="w", pady=(12, 0))
@@ -792,9 +802,9 @@ class ContactExtractorGUI(tk.Tk):
         ttk.Button(row_tc, text="Gán", style="Secondary.TButton",
                    command=self.apply_to_chuc).pack(side="left", padx=(6, 0))
         ttk.Label(self.m2_file_frame,
-                  text="Tệp mới thêm lấy giá trị trong ô này. Bấm \"Gán\" để áp dụng cho các tệp đang chọn "
-                       "(không chọn tệp nào = áp dụng cho tất cả). Dùng khi nguồn không tự nêu rõ "
-                       "tỉnh/thành (vd \"Sở Tư pháp\"). Ví dụ: Cần Thơ",
+                  text="Tệp/sheet mới thêm lấy giá trị trong ô này. Bấm \"Gán\" để áp dụng cho các dòng "
+                       "đang chọn (không chọn dòng nào = áp dụng cho tất cả). Dùng khi nguồn không tự nêu "
+                       "rõ tỉnh/thành (vd \"Sở Tư pháp\"). Ví dụ: Cần Thơ",
                   style="Muted.TLabel", wraplength=320).pack(anchor="w", pady=(4, 0))
         self.m2_count_var = tk.StringVar(value="Chưa chọn tệp nào.")
         ttk.Label(self.m2_file_frame, textvariable=self.m2_count_var, style="Muted.TLabel").pack(
@@ -862,7 +872,7 @@ class ContactExtractorGUI(tk.Tk):
 
         def m2_issue_row_to_values(issue):
             return (issue.get("source", ""), issue.get("stt", ""), issue.get("raw_name", ""), issue.get("raw_email", ""),
-                    issue.get("raw_phone", ""), issue.get("raw_unit", ""))
+                    issue.get("raw_phone", ""), issue.get("raw_unit", ""), issue.get("note", ""))
 
         self.panel_m2 = ResultPanel(
             self, self.result_container, "email",
@@ -942,60 +952,116 @@ class ContactExtractorGUI(tk.Tk):
         self.add_mode2_paths(paths)
 
     def add_mode2_paths(self, paths, to_chuc=None):
-        """Them tep vao danh sach che do 2 (bo qua tep da co). To chuc mac
-        dinh lay tu tham so, hoac tu o nhap hien tai."""
+        """Them tep vao danh sach che do 2 (bo qua tep/sheet da co). To chuc
+        mac dinh lay tu tham so, hoac tu o nhap hien tai. Tep Excel co >= 2
+        sheet co email -> moi sheet 1 dong (xem core.list_excel_sheets); sheet
+        trung >= 50% email voi sheet truoc mac dinh bi bo qua (skip=True),
+        nguoi dung bat lai bang "Dùng / Bỏ sheet"."""
         value = (self.to_chuc_var.get() if to_chuc is None else to_chuc).strip()
-        for p in paths:
-            if p in self.mode2_to_chuc:
-                continue
-            self.mode2_paths.append(p)
-            self.mode2_to_chuc[p] = value
+        existing = {(s["path"], s["sheet"]) for s in self.mode2_sources}
+        self.config(cursor="watch")
+        self.update_idletasks()
+        try:
+            for p in paths:
+                try:
+                    sheets = core.list_excel_sheets(p)
+                except Exception:
+                    sheets = []  # tep hong/khong mo duoc: van them 1 dong, loi se bao khi trich xuat
+                if sheets:
+                    rows = [(i["sheet"], i["emails"], i["suggest_skip"], i["overlap_with_previous"])
+                            for i in sheets]
+                else:
+                    rows = [(None, None, False, 0)]
+                for sheet, emails, skip, overlap in rows:
+                    if (p, sheet) in existing:
+                        continue
+                    existing.add((p, sheet))
+                    self.mode2_sources.append({"path": p, "sheet": sheet, "to_chuc": value, "emails": emails,
+                                               "skip": skip, "overlap": overlap})
+        finally:
+            self.config(cursor="")
         self._refresh_mode2_tree()
 
     def remove_mode2_selected(self):
-        for iid in self.m2_tree.selection():
-            path = self.mode2_paths[int(iid)]
-            self.mode2_to_chuc.pop(path, None)
-        keep = set(self.mode2_to_chuc)
-        self.mode2_paths = [p for p in self.mode2_paths if p in keep]
+        drop = {int(i) for i in self.m2_tree.selection()}
+        self.mode2_sources = [s for i, s in enumerate(self.mode2_sources) if i not in drop]
         self._refresh_mode2_tree()
 
     def clear_mode2_files(self):
-        self.mode2_paths = []
-        self.mode2_to_chuc = {}
+        self.mode2_sources = []
         self._refresh_mode2_tree()
 
     def apply_to_chuc(self):
-        """Gan o 'To chuc mac dinh' cho cac tep dang chon; khong chon tep nao
+        """Gan o 'To chuc mac dinh' cho cac dong dang chon; khong chon dong nao
         -> gan cho tat ca (truong hop hay gap: ca lo cung 1 tinh)."""
         value = self.to_chuc_var.get().strip()
         selected = self.m2_tree.selection()
-        targets = [self.mode2_paths[int(i)] for i in selected] if selected else list(self.mode2_paths)
-        for p in targets:
-            self.mode2_to_chuc[p] = value
+        targets = [self.mode2_sources[int(i)] for i in selected] if selected else self.mode2_sources
+        for s in targets:
+            s["to_chuc"] = value
+        self._refresh_mode2_tree(keep_selection=selected)
+
+    def toggle_mode2_sheet(self):
+        """Doi trang thai Dung/Bo cua cac sheet dang chon (dong khong phai sheet
+        Excel khong doi)."""
+        selected = self.m2_tree.selection()
+        for i in selected:
+            s = self.mode2_sources[int(i)]
+            if s["sheet"] is not None:
+                s["skip"] = not s["skip"]
         self._refresh_mode2_tree(keep_selection=selected)
 
     def _on_mode2_select(self, event=None):
-        # Chon 1 tep -> hien To chuc cua tep do trong o nhap de sua nhanh.
+        # Chon 1 dong -> hien To chuc cua dong do trong o nhap de sua nhanh, va
+        # ly do bo qua (neu co) o duoi danh sach.
         selected = self.m2_tree.selection()
         if len(selected) == 1:
-            self.to_chuc_var.set(self.mode2_to_chuc.get(self.mode2_paths[int(selected[0])], ""))
+            s = self.mode2_sources[int(selected[0])]
+            self.to_chuc_var.set(s["to_chuc"])
+            self.m2_detail_var.set(self._mode2_status_text(s, full=True))
+        else:
+            self.m2_detail_var.set("")
+
+    @staticmethod
+    def _mode2_status_text(s, full=False):
+        """Trang thai ngan (cot) hoac day du (dong chi tiet duoi danh sach)."""
+        if s["sheet"] is None:
+            return "Đọc"
+        if not s["skip"]:
+            return f"Sheet \"{s['sheet'].strip()}\" sẽ được đọc. Nhấp đúp để bỏ qua." if full else "Đọc"
+        if not full:
+            return "Bỏ qua"
+        text = f"Sheet \"{s['sheet'].strip()}\" đang BỎ QUA"
+        if s["overlap"]:
+            text += (f": trùng {s['overlap']}/{s['emails']} email với sheet trước (có thể là bản nháp/phụ lục; "
+                     f"{s['emails'] - s['overlap']} email mới sẽ không được đọc)")
+        return text + ". Nhấp đúp để dùng lại."
 
     def _refresh_mode2_tree(self, keep_selection=()):
         self.m2_tree.delete(*self.m2_tree.get_children())
-        for i, p in enumerate(self.mode2_paths):
-            icon = FILE_ICONS.get(os.path.splitext(p)[1].lower(), "\U0001F4C4")
-            self.m2_tree.insert("", tk.END, iid=str(i),
-                                values=(f"{icon}  {os.path.basename(p)}", self.mode2_to_chuc.get(p) or "(trống)"))
+        for i, s in enumerate(self.mode2_sources):
+            icon = FILE_ICONS.get(os.path.splitext(s["path"])[1].lower(), "\U0001F4C4")
+            name = f"{icon}  {os.path.basename(s['path'])}"
+            if s["sheet"] is not None:
+                name += f" › {s['sheet'].strip()}"
+            self.m2_tree.insert("", tk.END, iid=str(i), tags=("skipped",) if s["skip"] else (),
+                                values=(name, "" if s["emails"] is None else s["emails"],
+                                        s["to_chuc"] or "(trống)", self._mode2_status_text(s)))
         valid = [i for i in keep_selection if self.m2_tree.exists(i)]
         if valid:
             self.m2_tree.selection_set(valid)
-        n = len(self.mode2_paths)
-        missing = sum(1 for p in self.mode2_paths if not self.mode2_to_chuc.get(p))
-        text = "Chưa chọn tệp nào." if n == 0 else f"Đã chọn {n} tệp."
+        used = [s for s in self.mode2_sources if not s["skip"]]
+        n_files = len({s["path"] for s in self.mode2_sources})
+        if not self.mode2_sources:
+            text = "Chưa chọn tệp nào."
+        else:
+            text = f"{n_files} tệp, {len(used)}/{len(self.mode2_sources)} nguồn sẽ được đọc."
+        missing = sum(1 for s in used if not s["to_chuc"])
         if missing:
-            text += f" {missing} tệp chưa có Tổ chức mặc định."
+            text += f" {missing} nguồn chưa có Tổ chức mặc định."
         self.m2_count_var.set(text)
+        if not valid:
+            self.m2_detail_var.set("")
 
     # ------------------------------------------------------------------
     def choose_template(self):
@@ -1082,8 +1148,12 @@ class ContactExtractorGUI(tk.Tk):
                 messagebox.showwarning("Thiếu dữ liệu", "Vui lòng chọn tệp nguồn.")
                 return
         else:
-            if not self.mode2_paths:
+            if not self.mode2_sources:
                 messagebox.showwarning("Thiếu dữ liệu", "Vui lòng chọn ít nhất 1 tệp danh sách đăng ký.")
+                return
+            if all(s["skip"] for s in self.mode2_sources):
+                messagebox.showwarning("Thiếu dữ liệu", "Tất cả sheet đều đang được bỏ qua. "
+                                       "Hãy bật lại ít nhất 1 sheet (nhấp đúp vào dòng).")
                 return
 
         self.run_button.config(state="disabled")
@@ -1098,7 +1168,15 @@ class ContactExtractorGUI(tk.Tk):
                 args=([self.mode1_input_path.get().strip()], self.dedupe_var.get()), daemon=True,
             )
         else:
-            items = [(p, self.mode2_to_chuc.get(p, "")) for p in self.mode2_paths]
+            items = [(s["path"], s["sheet"], s["to_chuc"]) for s in self.mode2_sources if not s["skip"]]
+            # Ghi ro sheet nao da bo, de nguoi dung chu dong bat lai neu can
+            # (vd 16 nguoi moi trong phu luc dau moi Son La).
+            for s in self.mode2_sources:
+                if s["skip"]:
+                    new = s["emails"] - s["overlap"]
+                    self.log(f"CẢNH BÁO: đã bỏ sheet '{s['sheet'].strip()}' của {os.path.basename(s['path'])}: "
+                             f"trùng {s['overlap']}/{s['emails']} email với sheet trước; {new} email mới trong "
+                             "sheet này không được đọc (nhấp đúp vào dòng sheet để dùng lại).")
             thread = threading.Thread(
                 target=self._extract_worker_mode2, args=(items, self.dedupe_var.get()), daemon=True,
             )

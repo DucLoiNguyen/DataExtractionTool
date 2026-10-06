@@ -35,22 +35,28 @@ D = os.path.join(os.path.dirname(os.path.abspath(__file__)), "test_data")
 MODE1 = [
     ("SonLinh.pdf", 25, 25),
     ("KhuDiTich.docx", 43, 42),
-    ("DongThap.pdf", 2381, 2239),  # bo 50 dong tieu de nhom; cuu Ho Quang Lon (email bi cat 2 o)
+    ("DongThap.pdf", 2381, 2229),  # bo 50 dong tieu de nhom; cuu Ho Quang Lon; -10 email cat giua tu (chu co dau)
     ("KonDao.pdf", 10, 10),
     ("TaPhin.pdf", 80, 78),        # khoi phuc STT 23/40/55/79 tu van ban tho
     ("DaNang.xlsx", 82, 82),
     ("LongHoa.xlsx", 96, 95),
-    ("CanTho.xlsx", 5000, 4968),   # Excel khong ghep dong (truoc: 4999 - mat 1 nguoi)
+    ("CanTho.xlsx", 5000, 4964),   # Excel khong ghep dong; -4 email cat giua tu (chu co dau)
     ("NinhBinh.xlsx", 5417, 4327), # Support_excel.xlsx - khong co dong tieu de
     ("ChiengKen.pdf", 71, 67),
     ("YenThanh.pdf", 135, 135),
-    ("DakLak.xlsx", 330, 325),
+    ("DakLak.xlsx", 330, 324),     # -1 email cat giua tu (hongđt@...)
     ("BaoTang.doc", 10, 10),       # can Word + pywin32 hoac LibreOffice
+    ("GiaLai_SNNMT.pdf", 9, 9),    # o tieu de gop o + ten ngat 2 dong (truoc: 1 ban ghi rac)
+    ("TTYT_TamLong.xlsx", 79, 79), # 2 sheet: 43 + 36
+    ("PhuTho_ThongNhat.pdf", 69, 67),  # email co dau cach (STT 36) bi loai, khong noi lien
+    ("PhuTho_NguyetDuc.pdf", 54, 53),  # 9 email bi cat theo vien o duoc khoi phuc; tieu de SDT bi ngat dong
+    ("PhuTho_DaiDong.xlsx", 172, 169),
+    ("SonLa.xlsx", 5981, 5043),    # sheet 2 (phu luc dau moi) bi bo; -10 email cat giua tu
 ]
 
 # (ten file, to chuc mac dinh, doc, kq, ckt)
 MODE2 = [
-    ("CanTho.xlsx", "Cần Thơ", 5000, 4968, 32),
+    ("CanTho.xlsx", "Cần Thơ", 5000, 4964, 36),
     ("VINATOM.xls", "Viện Năng lượng nguyên tử Việt Nam", 539, 532, 7),
     ("ThaiNguyen.xls", "Thái Nguyên", 155, 153, 2),
     ("KonDao.pdf", "Quảng Ngãi", 10, 10, 0),
@@ -61,13 +67,18 @@ MODE2 = [
     ("ChanhHung.docx", "Hồ Chí Minh", 2, 2, 0),
     ("P_LongHoa.doc", "Hồ Chí Minh", 97, 0, 97),
     ("BaoTang.doc", "Hồ Chí Minh", 10, 10, 0),
-    ("SonLa.xlsx", "Sơn La", 5981, 5053, 928),
+    ("SonLa.xlsx", "Sơn La", 5981, 5043, 938),
     ("DaNang.xlsx", "Đà Nẵng", 82, 82, 0),
     ("LongHoa.xlsx", "Hồ Chí Minh", 96, 95, 1),
     ("NinhBinh.xlsx", "Ninh Bình", 5417, 4327, 1090),
     ("ChiengKen.pdf", "Lào Cai", 71, 67, 4),
     ("YenThanh.pdf", "Lào Cai", 135, 135, 0),
-    ("DakLak.xlsx", "Đắk Lắk", 330, 325, 5),
+    ("DakLak.xlsx", "Đắk Lắk", 330, 324, 6),
+    ("GiaLai_SNNMT.pdf", "Gia Lai", 9, 9, 0),
+    ("TTYT_TamLong.xlsx", "Khánh Hòa", 79, 79, 0),  # sheet=None: doc ca 2 sheet voi 1 To chuc mac dinh
+    ("PhuTho_ThongNhat.pdf", "Phú Thọ", 69, 67, 2),
+    ("PhuTho_NguyetDuc.pdf", "Phú Thọ", 54, 53, 1),
+    ("PhuTho_DaiDong.xlsx", "Phú Thọ", 172, 169, 3),
 ]
 
 
@@ -139,6 +150,80 @@ def unit_checks():
         check(got == exp, f"gộp xã/phường: {raw!r} -> {got!r} (kỳ vọng {exp!r})")
     check(v2.determine_to_chuc("Đoàn thanh niên CS Hồ Chí Minh xã Tả Phìn", "Lào Cai") == "TỈNH LÀO CAI",
           "Tổ chức không bị nhận nhầm từ tên 'Hồ Chí Minh' của Đoàn thanh niên")
+
+    # --- Loi 2: ten phuong khong dinh quoc hieu (dong gop 2 cot, chu viet hoa) ---
+    check(v2._find_commune_in_text("PHƯỜNG TAM LONG CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM") == "Phường Tam Long",
+          "xã/phường: dừng ở quốc hiệu 'CỘNG HÒA XÃ HỘI'")
+    check(v2._find_commune_in_text("XÃ CỘNG HÒA") == "Xã Cộng Hòa", "xã/phường: 'Xã Cộng Hòa' là tên xã thật")
+    check(v2._find_doc_commune("ỦY BAN NHÂN DÂN\nPHƯỜNG TAM LONG\nCỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM") == "Phường Tam Long",
+          "xã ban hành: nối ô bằng xuống dòng")
+    # --- Phu Tho: quy tac email moi ---
+    # Dau cach giua phan ten: co the thieu dau cham -> loai, khong noi lien
+    check(core.normalize_email("qthoang thongnhat@phutho.gov.vn") is None, "email 'qthoang thongnhat@' -> loại")
+    check(core.normalize_email("Nhen.BT daidong@phutho.gov.vn") is None, "email 'Nhen.BT daidong@' -> loại")
+    check(core.normalize_email("hdkhang 1 @cantho.gov.vn") == "hdkhang1@cantho.gov.vn", "email 'hdkhang 1 @' vẫn nối")
+    check(core.normalize_email("ten rieng@gmail.com") == "tenrieng@gmail.com", "Gmail có dấu cách vẫn nối")
+    check(core.normalize_email("Nvhoa. thongnhat @phutho.gov.vn") == "nvhoa.thongnhat@phutho.gov.vn",
+          "dấu cách sát '.' / '@' vẫn bỏ")
+    check(core.normalize_email("Thuanlv.nguyetduc@phuth\no.gov.vn") == "thuanlv.nguyetduc@phutho.gov.vn",
+          "xuống dòng trong email vẫn bỏ")
+    check(core.normalize_email("Email: abc@x.vn") == "abc@x.vn" and core.normalize_email("(abc@x.vn)") == "abc@x.vn",
+          "nhãn 'Email:' / ngoặc trước email vẫn đúng")
+    # Email bi cat giua tu (go tieng Viet co dau trong email) -> loai
+    for bad in ("thươngpv.xaxuanhong@ninhbinh.gov.vn", "hoangminhhảo1992@gmail.com",
+                "nvt vụoan.thkimdong@cantho.edu.vn", "phương phưowngthethe@1 977gmail.vn"):
+        check(core.normalize_email(bad) is None, f"email cắt giữa từ -> loại: {bad!r}")
+    check(core.match_header_field("Số điện\nthoại sử\ndụng Zalo") == "phone", "tiêu đề SĐT bị ngắt dòng")
+    check(v2._ABOVE_COMMUNE_RE.search("Cán bộ thường trực Trung tâm") is None, "'Cán bộ' không phải 'Bộ'")
+    check(v2._ABOVE_COMMUNE_RE.search("Bộ Tài chính") is not None, "'Bộ Tài chính' vẫn là cấp trên xã")
+    check(v2.normalize_don_vi("Cán bộ thường trực Trung tâm học tập cộng đồng", "Phú Thọ",
+                              doc_commune="Phường Thống Nhất") == "Phường Thống Nhất - Phú Thọ",
+          "Cán bộ TT học tập cộng đồng gộp vào phường ban hành")
+    # --- Loi 5: STT lech 1 cot ---
+    p = v2._parse_row_by_content(["", "8", "", "", "Đoàn Ngọc Có", "", "", "Phó Giám đốc Sở", "", "",
+                                  "codn@snnmt.gialai.gov.vn", "", "", "0905297904", ""])
+    check(p["stt"] == "8" and p["name"] == "Đoàn Ngọc Có", "STT lệch cột: lấy ô số đầu tiên")
+    p = v2._parse_row_by_content(["", "0905297904", "Nguyễn Văn A", "a@x.vn"])
+    check(p["stt"] == "" and p["name"] == "Nguyễn Văn A", "ô SĐT không bị nhận là STT")
+    # --- Loi 6: o don vi chi ghi chuc vu -> co quan ban hanh ---
+    head = ("UBND TỈNH GIA LAI CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM\n"
+            "SỞ NÔNG NGHIỆP VÀ MÔI TRƯỜNG Độc lập - Tự do - Hạnh phúc\nSố: /SNNMT-VP")
+    body = head + "\nSở Nông nghiệp và Môi trường nhận văn bản số 3520"
+    issuer = v2._find_doc_issuer(head, body)
+    check(issuer == "Sở Nông nghiệp và Môi trường", f"cơ quan ban hành (thực tế {issuer!r})")
+    check(v2._find_doc_issuer("UBND TỈNH GIA LAI CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM") is None,
+          "cơ quan ban hành: bỏ qua UBND tỉnh")
+    for raw, dc, exp in [
+        ("Phó Giám đốc Sở", None, "Sở Nông nghiệp và Môi trường - Gia Lai"),
+        ("Giám đốc sở", None, "Sở Nông nghiệp và Môi trường - Gia Lai"),
+        ("Chủ tịch UBND phường", None, "Chủ tịch UBND phường - Gia Lai"),         # Bến Cát: giữ nguyên
+        ("Giám đốc, Trung tâm Chiếu xạ", None, "Giám đốc, Trung tâm Chiếu xạ - Gia Lai"),  # VINATOM
+        ("Phó Giám đốc Sở", "Xã Tả Phìn", "Phó Giám đốc Sở - Gia Lai"),           # văn bản của xã: không thay
+    ]:
+        got = v2.normalize_don_vi(raw, "Gia Lai", doc_commune=dc, doc_issuer=issuer)
+        check(got == exp, f"chức vụ thuần túy: {raw!r} (xã={dc}) -> {got!r} (kỳ vọng {exp!r})")
+    # --- Loi 7: chot chan ghep dong (2 email day du khong duoc noi) ---
+    rows = [["1", "A", "a@x.vn"], ["", "", "b@y.vn"]]
+    check(len(core.merge_wrapped_continuation_rows(rows, 1, 0)) == 2, "không nối 2 email đầy đủ")
+    rows = [["1", "A", "abc@dongthap."], ["", "", "gov.vn"]]
+    merged = core.merge_wrapped_continuation_rows(rows, 1, 0)
+    check(len(merged) == 1 and merged[0][2] == "abc@dongthap.gov.vn", "vẫn nối email bị cắt thật")
+    # --- Lien quan toi tep nhieu sheet ---
+    sheets = [("a", [["x1@a.vn"], ["x2@a.vn"], ["x3@a.vn"], ["x4@a.vn"]]),
+              ("b", [["x1@a.vn"], ["x2@a.vn"], ["x3@a.vn"], ["y@a.vn"]]),
+              ("c", [["z1@a.vn"], ["z2@a.vn"], ["z3@a.vn"]])]
+    skips = [i["skip"] for i in core.analyze_sheets(sheets)]
+    check(skips == [False, True, False], f"bỏ sheet trùng >= 50% email (thực tế {skips})")
+    # --- Loc trung giua cac tep: ghi chu trung voi dong nao, tep nao ---
+    recs = [{"stt": "5", "row": 9, "name": "Nguyễn Văn A", "email": "a@x.vn", "phone": "", "don_vi": "", "to_chuc": "",
+             "source": "f1.xlsx"},
+            {"stt": "2", "name": "Nguyen Van A", "email": "a@x.vn", "phone": "", "don_vi": "", "to_chuc": "",
+             "source": "f2.pdf"}]
+    iss = []
+    kept, n = v2.dedupe_records(recs, iss)
+    check(n == 1 and len(kept) == 1 and iss[0]["source"] == "f2.pdf"
+          and "dòng 9 (STT 5)" in iss[0]["note"] and "f1.xlsx" in iss[0]["note"],
+          f"ghi chú trùng email khác tệp ({iss[0]['note'] if iss else None})")
     print(f"{'OK ' if not fails else 'SAI'} kiểm tra đơn vị ({fails} lỗi)")
     return fails
 
@@ -202,11 +287,70 @@ def run(detail=False):
         fails += not ok
         print(f"{'OK ' if ok else 'SAI'} Nhiều tệp 1 lần ({', '.join(f for f, _ in batch)}) giống chạy riêng")
 
+    fails += _sheet_and_batch_checks(results)
+
     if detail:
         print("=== KIEM TRA DINH TINH ===")
         fails += _qualitative(results)
 
     print(f"\nTong so muc SAI: {fails}")
+    return fails
+
+
+def _sheet_and_batch_checks(results):
+    """Tep nhieu sheet (list_excel_sheets, doc theo sheet, moi sheet 1 To chuc) va
+    loc trung email giua cac tep."""
+    fails = 0
+
+    def check(cond, msg):
+        nonlocal fails
+        fails += not cond
+        print(f"{'OK ' if cond else 'SAI'} {msg}")
+
+    def path(f):
+        p = os.path.join(D, f)
+        return p if os.path.exists(p) else None
+
+    def brief(p):
+        return [(i["sheet"], i["emails"] > 0, i["suggest_skip"]) for i in core.list_excel_sheets(p)]
+
+    p = path("TTYT_TamLong.xlsx")
+    if p:
+        sh = core.list_excel_sheets(p)
+        check([x["sheet"] for x in sh] == ["UBND PHƯỜNG TAM LONG", "ĐẢNG ỦY PHƯỜNG TAM LONG"]
+              and [x["emails"] for x in sh] == [43, 36] and not any(x["suggest_skip"] for x in sh),
+              f"list_excel_sheets TTYT: 2 sheet 43 + 36 email, không bỏ sheet nào ({brief(p)})")
+        items = [(p, "UBND PHƯỜNG TAM LONG", "Khánh Hòa"), (p, "ĐẢNG ỦY PHƯỜNG TAM LONG", "Hồ Chí Minh")]
+        (recs, s), _log = _quiet(v2.extract_v2_batch, items, dedupe=True, verbose=False)
+        s1 = [r for r in recs if "UBND PHƯỜNG" in r["source"]]
+        s2 = [r for r in recs if "ĐẢNG ỦY" in r["source"]]
+        check(len(recs) == 79 and len(s1) == 43 and len(s2) == 36 and not s["issues"],
+              f"TTYT theo sheet: 43 + 36 = 79 tài khoản, 0 cần kiểm tra (thực tế {len(s1)} + {len(s2)})")
+        check({(r["don_vi"], r["to_chuc"]) for r in s1} == {("Trung Tâm Y Tế Khu Vực Bác Ái - Khánh Hòa", "TỈNH KHÁNH HÒA")},
+              "TTYT sheet 1: Trung Tâm Y Tế Khu Vực Bác Ái - Khánh Hòa / TỈNH KHÁNH HÒA")
+        check({(r["don_vi"], r["to_chuc"]) for r in s2} == {("Phường Tam Long - Hồ Chí Minh", "THÀNH PHỐ HỒ CHÍ MINH")},
+              "TTYT sheet 2: Phường Tam Long - Hồ Chí Minh / THÀNH PHỐ HỒ CHÍ MINH (không dính quốc hiệu)")
+
+    p = path("SonLa.xlsx")
+    if p:
+        sh = core.list_excel_sheets(p)
+        check(len(sh) == 2 and not sh[0]["suggest_skip"] and sh[1]["suggest_skip"],
+              f"list_excel_sheets Sơn La: sheet 2 (phụ lục đầu mối) gợi ý bỏ ({brief(p)})")
+        check(any("Bỏ qua sheet" in w for w in results.get("SonLa.xlsx", ([], {"warnings": []}))[1]["warnings"]),
+              "Sơn La chế độ 2: cảnh báo đã bỏ sheet phụ lục")
+
+    p = path("VINATOM.xls")
+    if p:
+        check([x["sheet"] for x in core.list_excel_sheets(p)] == ["Người dùng "],
+              "list_excel_sheets VINATOM: chỉ sheet 'Người dùng ' (giữ dấu cách thừa), bỏ sheet danh mục")
+
+    # Loc trung email GIUA cac tep: nguoi bi loai co ghi chu tro toi dong/tep da giu
+    p = path("TaPhin.pdf")
+    if p:
+        (recs, s), _log = _quiet(v2.extract_v2_batch, [(p, "Lào Cai"), (p, "Lào Cai")], dedupe=True, verbose=False)
+        dups = [i for i in s["issues"] if i["reason"] == "duplicate_email"]
+        check(len(recs) == 78 and len(dups) == 78 and all("TaPhin.pdf" in i["note"] and "STT" in i["note"] for i in dups),
+              f"Lọc trùng khác tệp: 78 người trùng, mỗi dòng có ghi chú dòng/tệp ({dups[0]['note'] if dups else None})")
     return fails
 
 
@@ -265,8 +409,39 @@ def _qualitative(results):
         if f in results:
             units = {r["don_vi"] for r in results[f][0]}
             check(units == {exp}, f"{f}: đơn vị duy nhất '{exp}' (thực tế {sorted(units)[:3]})")
+    if "GiaLai_SNNMT.pdf" in results:
+        recs = results["GiaLai_SNNMT.pdf"][0]
+        names = [r["name"] for r in recs]
+        exp = ["Cao Thanh Thương", "Nguyễn Thị Tố Trân", "Trần Đình Chương", "Hà Thị Thanh Hương", "Nguyễn Văn Hoan",
+               "Nguyễn Thị Thế Vy", "Trần Quốc Khánh", "Đoàn Ngọc Có", "Vũ Ngọc An"]
+        check(names == exp, f"Gia Lai: họ tên đầy đủ, STT 8-9 không lệch (thực tế {names})")
+        check({(r["don_vi"], r["to_chuc"]) for r in recs} == {("Sở Nông nghiệp và Môi trường - Gia Lai", "TỈNH GIA LAI")},
+              "Gia Lai: đơn vị lấy từ cơ quan ban hành (ô chỉ ghi chức vụ)")
+        check(any("nối 7 họ tên" in w for w in results["GiaLai_SNNMT.pdf"][1]["warnings"]),
+              "Gia Lai: cảnh báo đã nối 7 họ tên bị ngắt dòng")
+    for f, exp in [("PhuTho_ThongNhat.pdf", "Phường Thống Nhất - Phú Thọ"),
+                   ("PhuTho_NguyetDuc.pdf", "Xã Nguyệt Đức - Phú Thọ"), ("PhuTho_DaiDong.xlsx", "Xã Đại Đồng - Phú Thọ")]:
+        if f in results:
+            units = {r["don_vi"] for r in results[f][0]}
+            check(units == {exp}, f"{f}: đơn vị duy nhất '{exp}' (thực tế {sorted(units)[:3]})")
+    if "PhuTho_NguyetDuc.pdf" in results:
+        recs, st = results["PhuTho_NguyetDuc.pdf"]
+        by = {r["stt"]: r["email"] for r in recs}
+        exp_em = {"29": "hainv", "30": "huypq", "31": "quanlh", "32": "thinhpv", "34": "mint", "35": "nthiphuong4",
+                  "37": "hieutv", "39": "dthuong21", "40": "nguyendinhanh"}
+        check(all(by.get(k) == f"{v}.nguyetduc@phutho.gov.vn" for k, v in exp_em.items()),
+              "Nguyệt Đức: khôi phục đủ 9 email bị cắt theo viền ô (STT 29-40)")
+        check(any("Khôi phục 9 email" in w for w in st["warnings"]), "Nguyệt Đức: cảnh báo khôi phục 9 email")
+        check(all(r["phone"] for r in recs), "Nguyệt Đức: mọi dòng có SĐT")
+    if "PhuTho_ThongNhat.pdf" in results:
+        iss = {i["stt"]: i["reason"] for i in results["PhuTho_ThongNhat.pdf"][1]["issues"]}
+        check(iss == {"36": "invalid_email_format", "65": "duplicate_email"}, f"Thống Nhất: cần kiểm tra STT 36, 65 ({iss})")
+    if "PhuTho_DaiDong.xlsx" in results:
+        iss = {i["stt"]: i["reason"] for i in results["PhuTho_DaiDong.xlsx"][1]["issues"]}
+        check(iss == {"21": "invalid_email_format", "16": "duplicate_email", "53": "duplicate_email"},
+              f"Đại Đồng: cần kiểm tra STT 21, 16, 53 ({iss})")
     if "SonLa.xlsx" in results:
-        tx = [r for r in results["SonLa.xlsx"][0] if ".taxua@" in r["email"]]
+        tx =[r for r in results["SonLa.xlsx"][0] if ".taxua@" in r["email"]]
         check(len(tx) == 32 and all(r["don_vi"] == "Xã Tà Xùa - Sơn La" for r in tx),
               f"Sơn La: 32 người .taxua@ thuộc Xã Tà Xùa (thực tế {len(tx)})")
     if "BenCat.xlsx" in results:
