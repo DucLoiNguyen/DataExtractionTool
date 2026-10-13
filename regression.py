@@ -40,7 +40,7 @@ MODE1 = [
     ("TaPhin.pdf", 80, 78),        # khoi phuc STT 23/40/55/79 tu van ban tho
     ("DaNang.xlsx", 82, 82),
     ("LongHoa.xlsx", 96, 95),
-    ("CanTho.xlsx", 5000, 4964),   # Excel khong ghep dong; -4 email cat giua tu (chu co dau)
+    ("CanTho.xlsx", 5000, 4963),   # Excel khong ghep dong; -4 email cat giua tu; -1 email co dau cach trong ten mien
     ("NinhBinh.xlsx", 5417, 4327), # Support_excel.xlsx - khong co dong tieu de
     ("ChiengKen.pdf", 71, 67),
     ("YenThanh.pdf", 135, 135),
@@ -51,12 +51,38 @@ MODE1 = [
     ("PhuTho_ThongNhat.pdf", 69, 67),  # email co dau cach (STT 36) bi loai, khong noi lien
     ("PhuTho_NguyetDuc.pdf", 54, 53),  # 9 email bi cat theo vien o duoc khoi phuc; tieu de SDT bi ngat dong
     ("PhuTho_DaiDong.xlsx", 172, 169),
-    ("SonLa.xlsx", 5981, 5043),    # sheet 2 (phu luc dau moi) bi bo; -10 email cat giua tu
+    # --- lo 14 tep Phu Tho ngay 13/10/2026 ---
+    ("VinhTuong.docx", 67, 67),    # tieu de nhom gop o ngang (Word)
+    ("TienLu.xlsx", 346, 340),     # "Tru so chinh" khong phai "So"
+    ("ThaiHoa.docx", 42, 40),      # tieu de nhom con danh so A-rap
+    ("MaiChau.xlsx", 55, 54),      # Excel luu Unicode to hop (NFD)
+    ("HoiThinh.pdf", 54, 53),      # xa ten "Hoi Thinh"; -1 email 'p htho.gov.vn'
+    ("DongLuong.docx", 28, 28),
+    ("TanHoa.docx", 53, 51),       # tieu de SDT go sai "Dien loai lien he"
+    ("BinhNguyen.doc", 220, 218),  # dong chi co SDT khong noi vao SDT truoc
+    ("MuongVang.doc", 104, 102),
+    ("LamThao.pdf", 228, 223),     # khoi phuc STT bo cuc 2 dong/nguoi; tieu de "Số ĐT"
+    ("TamDuong.docx", 404, 393),
+    ("SoTaiChinh.xlsx", 216, 213),
+    ("SoXayDung.pdf", 151, 144),
+    ("SoYTe.xlsx", 25, 25),
+    ("SonLa.xlsx", 5981, 5026),    # sheet 2 (phu luc dau moi) bi bo; -10 email cat giua tu; -17 "sonla gov.vn"
 ]
+
+# Lam Thao: khoi phuc STT tu van ban tho bo cuc 2 dong/nguoi (ten + SDT o dong tren)
+LAMTHAO_EXPECT = {
+    "dungntk45@phutho.gov.vn": ("Nguyễn Thị Kim Dung", "0974569445"),
+    "huyenbtt23@phutho.gov.vn": ("Bùi Thị Thanh Huyền", "0355551234"),
+    "hiennt.c1.08494.001@phutho.edu.vn": ("Nguyễn Thị Hiền", "0344748822"),
+    "phuongtt.c1.08494.001@phutho.edu.vn": ("Trần Thị Phượng", "0983461950"),
+    "huyendt.c1.08494.001@phutho.edu.vn": ("Đoàn Thu Huyền", "0349092886"),
+    "anhhn.c1.08494.001@phutho.edu.vn": ("Hà Ngọc Anh", "0336354304"),
+    "lanttt.c1.08494.001@phutho.edu.vn": ("Tạ Thị Thu Lan", "0981237994"),
+}
 
 # (ten file, to chuc mac dinh, doc, kq, ckt)
 MODE2 = [
-    ("CanTho.xlsx", "Cần Thơ", 5000, 4964, 36),
+    ("CanTho.xlsx", "Cần Thơ", 5000, 4963, 37),
     ("VINATOM.xls", "Viện Năng lượng nguyên tử Việt Nam", 539, 532, 7),
     ("ThaiNguyen.xls", "Thái Nguyên", 155, 153, 2),
     ("KonDao.pdf", "Quảng Ngãi", 10, 10, 0),
@@ -67,7 +93,7 @@ MODE2 = [
     ("ChanhHung.docx", "Hồ Chí Minh", 2, 2, 0),
     ("P_LongHoa.doc", "Hồ Chí Minh", 97, 0, 97),
     ("BaoTang.doc", "Hồ Chí Minh", 10, 10, 0),
-    ("SonLa.xlsx", "Sơn La", 5981, 5043, 938),
+    ("SonLa.xlsx", "Sơn La", 5981, 5026, 955),
     ("DaNang.xlsx", "Đà Nẵng", 82, 82, 0),
     ("LongHoa.xlsx", "Hồ Chí Minh", 96, 95, 1),
     ("NinhBinh.xlsx", "Ninh Bình", 5417, 4327, 1090),
@@ -79,6 +105,20 @@ MODE2 = [
     ("PhuTho_ThongNhat.pdf", "Phú Thọ", 69, 67, 2),
     ("PhuTho_NguyetDuc.pdf", "Phú Thọ", 54, 53, 1),
     ("PhuTho_DaiDong.xlsx", "Phú Thọ", 172, 169, 3),
+    ("VinhTuong.docx", "Phú Thọ", 67, 67, 0),
+    ("TienLu.xlsx", "Phú Thọ", 346, 340, 6),
+    ("ThaiHoa.docx", "Phú Thọ", 42, 40, 2),
+    ("MaiChau.xlsx", "Phú Thọ", 55, 54, 1),
+    ("HoiThinh.pdf", "Phú Thọ", 54, 53, 1),
+    ("DongLuong.docx", "Phú Thọ", 28, 28, 0),
+    ("TanHoa.docx", "Phú Thọ", 53, 51, 2),
+    ("BinhNguyen.doc", "Phú Thọ", 220, 218, 2),
+    ("MuongVang.doc", "Phú Thọ", 104, 102, 2),
+    ("LamThao.pdf", "Phú Thọ", 228, 223, 5),
+    ("TamDuong.docx", "Phú Thọ", 404, 393, 11),
+    ("SoTaiChinh.xlsx", "Phú Thọ", 216, 213, 3),
+    ("SoXayDung.pdf", "Phú Thọ", 151, 144, 7),
+    ("SoYTe.xlsx", "Phú Thọ", 25, 25, 0),
 ]
 
 
@@ -179,6 +219,49 @@ def unit_checks():
     check(v2.normalize_don_vi("Cán bộ thường trực Trung tâm học tập cộng đồng", "Phú Thọ",
                               doc_commune="Phường Thống Nhất") == "Phường Thống Nhất - Phú Thọ",
           "Cán bộ TT học tập cộng đồng gộp vào phường ban hành")
+    # --- Lo ngay 13/10: Unicode to hop, xa 'Hội ...', 'Trụ sở', SDT 9 so, tieu de SDT, email la ---
+    import unicodedata
+    nfd = unicodedata.normalize("NFD", "UBND xã Mai Châu")
+    check(nfd != "UBND xã Mai Châu" and core.nfc(nfd) == "UBND xã Mai Châu", "NFC chuẩn hoá tổ hợp")
+    check(v2.normalize_don_vi(nfd, "Phú Thọ") == "Xã Mai Châu - Phú Thọ", "NFD 'xã Mai Châu' vẫn gộp thành xã")
+    check(v2._find_commune_in_text("UBND xã Hội Thịnh") == "Xã Hội Thịnh", "xã Hội Thịnh (không phải 'xã hội')")
+    check(v2._find_commune_in_text("XÃ HỘI THỊNH") == "Xã Hội Thịnh", "XÃ HỘI THỊNH")
+    check(v2._find_commune_in_text("CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM") is None, "quốc hiệu không phải xã")
+    check(v2._find_commune_in_text("Phòng Văn hóa - Xã Hội") is None, "'Xã Hội' trơn không phải xã")
+    check(v2._find_commune_in_text("Ngân hàng Chính sách Xã Hội Việt Nam") is None, "Ngân hàng Chính sách Xã Hội")
+    check(v2._ABOVE_COMMUNE_RE.search("THCS Tiên Lữ - Trụ sở chính") is None, "'Trụ sở' không phải 'Sở'")
+    check(v2._ABOVE_COMMUNE_RE.search("Sở Y tế") is not None, "'Sở Y tế' vẫn là cấp trên xã")
+    check(v2._cell_is_phone("986311959") and v2._cell_is_phone(986311959.0) and not v2._cell_is_phone("123"),
+          "SĐT 9 số thiếu 0 đầu nhận được theo nội dung")
+    check(core.match_header_field("Số ĐT sử\ndụng Zalo") == "phone", "tiêu đề 'Số ĐT sử dụng Zalo'")
+    check(core.match_header_field("Điện loại liên hệ") == "phone", "tiêu đề gõ sai 'Điện loại liên hệ'")
+    check(core.normalize_email("dqchinh1@p htho.gov.vn") is None, "dấu cách trong tên miền -> loại")
+    check(core.normalize_email("NamDH@phutho. gov.vn") == "namdh@phutho.gov.vn", "dấu cách sau dấu chấm tên miền vẫn bỏ")
+    p_ = v2._parse_row_by_content(["3", "Đinh Hải Nam", "Phó Chủ tịch", "NamDH@phutho. gov.vn", "0912372000"])
+    check(p_["email"] == "NamDH@phutho. gov.vn", "ô email có dấu cách bên trong vẫn là ô email")
+    p_ = v2._parse_row_by_content(["5", "Bùi Thị Huyền", "x", "HuyenBT.tanhoa.phutho.gov.vn", "0974259688"])
+    check(p_["email"] == "HuyenBT.tanhoa.phutho.gov.vn", "ô giống email thiếu '@' giữ làm email gốc")
+    # chuc vu duoi tieu de nhom -> ten nhom (Chi cuc Dan so, So Y te)
+    for cell, exp in [("P.Chi cục trưởng", "Chi cục Dân số"), ("Trưởng phòng Hành chính - Tổng hợp", "Chi cục Dân số"),
+                      ("Chuyên viên Dân số và Phát triển", "Chi cục Dân số"), ("Chi cục trưởng", "Chi cục Dân số"),
+                      ("Phòng Nghiệp vụ Y", "Phòng Nghiệp vụ Y"), ("Văn phòng Sở Y tế", "Văn phòng Sở Y tế")]:
+        got = v2._unit_under_group(cell, "Cơ quan Chi cục Dân số".replace("Cơ quan ", ""))
+        check(got == exp, f"đơn vị dưới tiêu đề nhóm: {cell!r} -> {got!r} (kỳ vọng {exp!r})")
+    check(v2._unit_under_group("Giám đốc Sở Y tế", "Cơ quan Sở Y tế") == "Sở Y tế", "bỏ tiền tố 'Cơ quan ' của tên nhóm")
+    # khoi phuc STT bo cuc 2 dong/nguoi: ten + SDT o dong tren, khong lay SDT dong duoi
+    txt = ("Nguyễn Thị Hiền 0344748822\n92 Trường TH Lâm Thao, xã Lâm Thao, tỉnh Phú Thọ hiennt.C1.08494.001@phutho.edu.vn\n"
+           "Đặng Thị Tuyết Hồng 0368658499\n93 Trường TH Lâm Thao, xã Lâm Thao, tỉnh Phú Thọ hongdtt.C1.08494.001@phutho.edu.vn")
+    got = core.find_stt_lines(txt, [92])
+    parts = core.split_recovered_stt_line(got[92]) if 92 in got else {}
+    check(parts.get("name") == "Nguyễn Thị Hiền" and parts.get("phone") == "0344748822"
+          and (parts.get("unit") or "").startswith("Trường TH Lâm Thao"),
+          f"khôi phục STT bố cục 2 dòng/người (thực tế {parts})")
+    got = core.find_stt_lines("161 Hà Ngọc Anh Trường TH Lâm Thao, xã Lâm Thao anhhn@phutho.edu.vn 0336354304\n162 B C", [161])
+    parts = core.split_recovered_stt_line(got.get(161, ""))
+    check(parts.get("name") == "Hà Ngọc Anh" and parts.get("phone") == "0336354304", f"tách tên khỏi 'Trường' (thực tế {parts})")
+    # khong noi dong chi co SDT vao dong da co SDT
+    rows = [["1", "A", "x", "a@x.vn", "0336688595"], ["", "", "Trường X", "", "0971053516"]]
+    check(len(core.merge_wrapped_continuation_rows(rows, 1, 0)) == 2, "không nối dòng chỉ có SĐT vào SĐT trước")
     # --- Loi 5: STT lech 1 cot ---
     p = v2._parse_row_by_content(["", "8", "", "", "Đoàn Ngọc Có", "", "", "Phó Giám đốc Sở", "", "",
                                   "codn@snnmt.gialai.gov.vn", "", "", "0905297904", ""])
@@ -251,6 +334,11 @@ def run(detail=False):
             ok = any("724, 743, 915, 920, 2315" in w for w in s["warnings"])
             fails += not ok
             print(f"{'OK ' if ok else 'SAI'} Đồng Tháp: cảnh báo STT nhảy số 724, 743, 915, 920, 2315")
+        if detail and f == "LamThao.pdf":
+            by = {x["email"]: x for x in recs}
+            ok = all(by.get(e) and by[e]["name"] == n and by[e]["phone"] == ph for e, (n, ph) in LAMTHAO_EXPECT.items())
+            fails += not ok
+            print(f"{'OK ' if ok else 'SAI'} Lâm Thao chế độ 1: 7 người khôi phục đúng họ tên + SĐT")
         if detail and f == "TaPhin.pdf":
             got = sorted(n for _src, n in s["recovered_stts"])
             fails += got != [23, 40, 55, 79]
@@ -440,8 +528,34 @@ def _qualitative(results):
         iss = {i["stt"]: i["reason"] for i in results["PhuTho_DaiDong.xlsx"][1]["issues"]}
         check(iss == {"21": "invalid_email_format", "16": "duplicate_email", "53": "duplicate_email"},
               f"Đại Đồng: cần kiểm tra STT 21, 16, 53 ({iss})")
+    if "LamThao.pdf" in results:
+        by = {x["email"]: x for x in results["LamThao.pdf"][0]}
+        check(all(by.get(e) and by[e]["name"] == n and by[e]["phone"] == ph for e, (n, ph) in LAMTHAO_EXPECT.items()),
+              "Lâm Thao chế độ 2: 7 người khôi phục đúng họ tên + SĐT (không lấy SĐT của người kế tiếp)")
+        check(sum(1 for x in results["LamThao.pdf"][0] if x["phone"]) == 222, "Lâm Thao: 222/223 có SĐT (STT 35 nguồn thiếu số)")
+        check(len(results["LamThao.pdf"][1].get("recovered_names", {})) >= 7, "Lâm Thao: liệt kê họ tên đã khôi phục")
+    if "HoiThinh.pdf" in results:
+        check({r["don_vi"] for r in results["HoiThinh.pdf"][0]} == {"Xã Hội Thịnh - Phú Thọ"}, "Hội Thịnh: 1 đơn vị 'Xã Hội Thịnh'")
+    if "TienLu.xlsx" in results:
+        check({r["don_vi"] for r in results["TienLu.xlsx"][0]} == {"Xã Tiên Lữ - Phú Thọ"}, "Tiên Lữ: 1 đơn vị (Trụ sở chính ≠ Sở)")
+    if "MaiChau.xlsx" in results:
+        check({r["don_vi"] for r in results["MaiChau.xlsx"][0]} == {"Xã Mai Châu - Phú Thọ"}, "Mai Châu: Unicode tổ hợp vẫn gộp xã")
+    if "TamDuong.docx" in results:
+        check(sum(1 for x in results["TamDuong.docx"][0] if x["phone"]) == 388, "Tam Dương: 388/393 có SĐT (SĐT 9 số thiếu 0 đầu)")
+    if "TanHoa.docx" in results:
+        em = {x["email"] for x in results["TanHoa.docx"][0]}
+        check("namdh@phutho.gov.vn" in em, "Tân Hòa: giữ Đinh Hải Nam (email 'phutho. gov.vn')")
+    if "SoYTe.xlsx" in results:
+        from collections import Counter as _C
+        c = _C(r["don_vi"] for r in results["SoYTe.xlsx"][0])
+        exp = {"Sở Y tế - Phú Thọ": 4, "Văn phòng Sở Y tế - Phú Thọ": 6, "Chi cục Dân số - Phú Thọ": 9,
+               "Chi cục An toàn thực phẩm - Phú Thọ": 1, "Phòng Kế hoạch Tài chính - Phú Thọ": 1,
+               "Phòng Nghiệp vụ Y - Phú Thọ": 1, "Phòng Bảo hiểm y tế và Công nghệ thông tin - Phú Thọ": 3}
+        check(dict(c) == exp, f"Sở Y tế: chức vụ dưới tiêu đề nhóm -> tên nhóm (thực tế {dict(c)})")
+    if "MuongVang.doc" in results:
+        check(all(x["phone"] for x in results["MuongVang.doc"][0]), "Mường Vang: mọi dòng có SĐT (kể cả 9 số)")
     if "SonLa.xlsx" in results:
-        tx =[r for r in results["SonLa.xlsx"][0] if ".taxua@" in r["email"]]
+        tx = [r for r in results["SonLa.xlsx"][0] if ".taxua@" in r["email"]]
         check(len(tx) == 32 and all(r["don_vi"] == "Xã Tà Xùa - Sơn La" for r in tx),
               f"Sơn La: 32 người .taxua@ thuộc Xã Tà Xùa (thực tế {len(tx)})")
     if "BenCat.xlsx" in results:

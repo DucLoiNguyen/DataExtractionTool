@@ -91,6 +91,8 @@ mất dữ liệu của tab kia. File mẫu mặc định tự đổi theo chế
    phần tên** (vd `qthoang thongnhat@...`, có thể thiếu dấu chấm) hoặc **bị cắt giữa từ**
    do gõ chữ có dấu (`thươngpv@...`) cũng bị loại và hiện trong "Cần kiểm tra".
    Email bị cắt theo viền ô bảng PDF được tool tự khôi phục từ toạ độ chữ, kèm cảnh báo.
+   Email có dấu cách trong **tên miền** (vd `...@sonla gov.vn`, `...@p htho.gov.vn`) cũng bị loại thay vì
+   nối liền thành tên miền sai.
 2. **Số điện thoại**: chuẩn theo định dạng Việt Nam (10 số, bắt đầu bằng 0);
    tự xử lý `+84`/`84`, thiếu số 0 đầu. Ô có nhiều số → lấy số hợp lệ đầu
    tiên. Không chuẩn hoá được → để trống (vẫn giữ bản ghi, chỉ email mới bắt
@@ -132,6 +134,7 @@ Tool còn tự phát hiện các dấu hiệu **mất dữ liệu âm thầm** v
 - **Cả cột SĐT (hoặc Đơn vị) trống** trên mọi bản ghi — thường do tiêu đề cột
   lạ, tool không nhận ra cột.
 - **Bảng có email nhưng không nhận ra tiêu đề cột** nên bị bỏ qua.
+- **Dòng khôi phục từ văn bản gốc PDF** (kèm họ tên đã lấy được để bạn soát nhanh).
 - **Sheet Excel bị bỏ qua** vì trùng với sheet trước, **họ tên bị ngắt thành 2
   dòng đã được nối lại** (PDF), hoặc **nhiều dòng bị ghép** vì cột Họ và tên
   trống.

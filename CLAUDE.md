@@ -69,6 +69,7 @@ GUI (`gui.py`): 2 tab chế độ ở đầu trang; toàn bộ trang cuộn đư
 - Sau khi sửa vẫn có "nhãn rỗng" (`_has_empty_email_label`) hoặc không có `@` → **loại** (lý do "Email sai định dạng"). Không bao giờ tự đoán/chèn thêm nội dung bị mất (ví dụ thiếu hẳn `@` hay thiếu tên miền).
 - **Dấu cách giữa phần tên** (`_has_ambiguous_space_in_local`): `qthoang thongnhat@phutho.gov.vn`, `Nhen.BT daidong@...` (Phú Thọ) rất có thể thiếu dấu chấm → nối liền sẽ ra địa chỉ sai một cách âm thầm → **loại** ("Email sai định dạng"). Chỉ xét khi cả ô chỉ gồm ký tự email + khoảng trắng. Vẫn nối liền khi tên miền là Gmail (Gmail bỏ qua dấu chấm) hoặc phần sau dấu cách toàn chữ số (`hdkhang 1 @cantho.gov.vn` → `hdkhang1@`). Xuống dòng trong email (PDF ngắt dòng) và dấu cách sát `@`/`.` vẫn bỏ như cũ.
 - **Email bị cắt giữa từ** (`_is_cut_mid_word`): người nhập gõ tiếng Việt có dấu trong email (`thươngpv.xaxuanhong@...`, `hoangminhhảo1992@gmail.com`); regex chỉ khớp phần đuôi (`ngpv.xaxuanhong@...`, `o1992@gmail.com`) → **loại** nếu ký tự ngay trước phần khớp là chữ/số (kể cả có dấu). `Email:abc@`, `(abc@` vẫn đúng. Đã soát từng dòng trên dữ liệu thật: mọi dòng đổi đều là email bị cắt thật. Đề xuất chưa làm: tự bỏ dấu (`thươngpv` → `thuongpv`) — nguy hiểm khi ký tự lạ do nhận dạng chữ (`ơlenganmau...`), chờ người dùng quyết.
+- **Dấu cách giữa 2 chữ/số trong TÊN MIỀN** (`dqchinh1@p htho.gov.vn`, `xuantv.ngocchien@sonla gov.vn`, `ldphuong2@cantho.gov.v n`): cùng loại với dấu cách trong phần tên → **loại** (nối liền ra `@phtho.gov.vn`, `@sonlagov.vn` — tên miền không tồn tại). Trước đây Chế độ 1/Excel nối liền âm thầm còn Chế độ 2 PDF/Word loại: nay nhất quán. Tác động ngày 13/10/2026: Sơn La −17 (`sonla gov.vn`, thực ra thiếu dấu chấm), Cần Thơ −1 (`v n` thực ra đúng `vn`), Hội Thịnh −1. Dấu cách sát `.` (`phutho. gov.vn`) vẫn bỏ. Tuỳ chọn chưa làm: tự sửa dấu cách thành dấu chấm (cứu được 17 người Sơn La) — chờ người dùng quyết.
 - Không có email → loại (lý do "Thiếu email"). Email là trường bắt buộc duy nhất.
 - Có thể có 2 cột email (vd "Thư điện tử công vụ" + "Thư điện tử Gmail"): dùng cột 2 (`email_alt`) khi cột 1 trống.
 
@@ -88,6 +89,8 @@ GUI (`gui.py`): 2 tab chế độ ở đầu trang; toàn bộ trang cuộn đư
 - Nếu giá trị chính là một tỉnh/thành → chỉ giữ tên riêng, không thêm hậu tố.
 - Nếu "Tổ chức mặc định" **không phải** tỉnh/thành (vd "Viện Năng lượng nguyên tử Việt Nam") → không thêm hậu tố.
 - Cột đơn vị ghi **chức vụ** thay vì tên đơn vị (vd Bến Cát: "Chủ tịch UBND phường") → **giữ nguyên dữ liệu gốc** (người dùng đã chọn như vậy), không suy từ đuôi email.
+- **Chức vụ nằm dưới dòng tiêu đề nhóm** (`_unit_under_group`, cả 2 đường đọc; SoYTe): ô đơn vị là chức vụ (`_looks_like_job_title`: thêm `P.` = Phó, `PGĐ`, `...trưởng` như Chi cục trưởng/Hiệu trưởng) → dùng **tên nhóm**, bỏ tiền tố "Cơ quan " (`Cơ quan Sở Y tế` → `Sở Y tế`). `Trưởng phòng Hành chính - Tổng hợp` dưới nhóm `Chi cục Dân số` thuộc Chi cục Dân số, không phải đơn vị độc lập; ưu tiên hơn `doc_issuer`. Ô là tên đơn vị thật (`Văn phòng Sở Y tế`, `Phòng Nghiệp vụ Y`) giữ nguyên. Ô "chức vụ + đơn vị" như VINATOM không dùng tiêu đề nhóm nên không đổi.
+- **Tên xã bắt đầu bằng "Hội"** (`xã Hội Thịnh`, `XÃ HỘI THỊNH`): `_is_not_commune_name` chỉ loại "xã hội"/"xã viên" đứng một mình, quốc hiệu `XÃ HỘI CHỦ NGHĨA`, `Chính sách Xã Hội`, `Xã Hội Việt Nam`. **"Trụ sở" không phải "Sở"** (`THCS Tiên Lữ - Trụ sở chính`).
 - **Ngoại lệ (người dùng đồng ý 02/10/2026): ô chỉ ghi chức vụ THUẦN TÚY** (`_looks_like_job_title` đúng **và** `_strip_job_title` rỗng: "Giám đốc sở", "Phó Giám đốc Sở") **mà văn bản có cơ quan ban hành rõ ở đầu và không phải của xã/phường** → đơn vị = cơ quan ban hành (`_find_doc_issuer`: cụm chữ **viết hoa** ở đầu dòng bắt đầu bằng Sở/Ban/Trung tâm/Văn phòng/Bệnh viện/Viện/Chi cục/Cục/Trường/Bảo tàng/Thanh tra, dừng ở từ có chữ thường hoặc "CỘNG HÒA XÃ HỘI"; bỏ dòng "UBND TỈNH..."; cách viết lấy theo thân văn bản nếu có, vd "Sở Nông nghiệp và Môi trường", không thì viết hoa chữ đầu mỗi từ). Gia Lai: `Sở Nông nghiệp và Môi trường - Gia Lai`. Ô "chức vụ + đơn vị" (VINATOM "Giám đốc, Trung tâm Chiếu xạ Hà Nội") và "Chủ tịch UBND phường" vẫn giữ nguyên. Văn bản của xã/phường: không áp dụng.
 
 **Tổ chức** (Chế độ 2, `v2.determine_to_chuc`): tên chính thức **hiện nay** của tỉnh/thành cấp 1, VIẾT HOA (vd `THÀNH PHỐ CẦN THƠ`, `TỈNH LÀO CAI`). Dùng `PROVINCE_MERGE_MAP` (34 tỉnh/thành sau sáp nhập 2025, Nghị quyết 202/2025/QH15, hiệu lực 12/6/2025) để quy tên cũ về tên mới (Hậu Giang/Sóc Trăng → Cần Thơ; Kon Tum → Quảng Ngãi; Bắc Kạn → Thái Nguyên; Quảng Nam → Đà Nẵng...). Nguồn không nêu → dùng "Tổ chức mặc định" người dùng nhập. Nếu giá trị mặc định **không phải** tỉnh/thành → dùng nguyên văn viết hoa và **không** dò tên tỉnh trong văn bản (tránh "Trung tâm Chiếu xạ Hà Nội" bị nhận thành Hà Nội). Nếu giá trị mặc định **là** tỉnh/thành → chỉ đổi sang tỉnh khác khi văn bản ghi rõ tiền tố "tỉnh X" / "thành phố X" / "TP. X" (`detect_to_chuc_from_text(..., require_prefix=True)`); chỉ nhắc tên thì giữ mặc định, vì tên tỉnh hay trùng tên xã/trường/tổ chức ("Xã Bình Thuận" ở Sơn La, "Đoàn TNCS Hồ Chí Minh"). So khớp tên tỉnh **giữ nguyên dấu** khi văn bản có dấu ("Hải Đường" ≠ "Hải Dương"), có tính cả 2 kiểu đặt dấu ("Hòa"/"Hoà"). Người dùng từng gọi nhầm "TỈNH CẦN THƠ" — tên đúng là "THÀNH PHỐ CẦN THƠ".
@@ -112,6 +115,10 @@ GUI (`gui.py`): 2 tab chế độ ở đầu trang; toàn bộ trang cuộn đư
 
 **Tiêu đề nhóm số La Mã** (I, II, III...): dòng nhóm (không email/SĐT, chỉ 1 ô tên có nội dung) → dùng tên nhóm làm đơn vị **chỉ khi** cột đơn vị trên dòng không giống tên đơn vị thật (`_looks_like_real_unit_name`: có khoảng trắng). VINATOM có cột đơn vị chứa username; Nghĩa Đô có cột đơn vị tốt → giữ.
 
+**Unicode tổ hợp (NFD)** (MaiChau.xlsx: `xa` + U+0303 trông giống `xã`): `core.nfc` chuẩn hoá NFC **ngay khi đọc** mọi định dạng (Excel/xls/CSV/Word/PDF, cả bảng lẫn văn bản thô) + đầu `normalize_don_vi`/`_cell_display`. Không chuẩn hoá thì `_COMMUNE_LEVEL_RE` không khớp "xã" và 11 người ra `UBND xã Mai Châu - Phú Thọ`. Ghi chú code: trong `normalize_don_vi` có biến cục bộ tên `core` — đừng gọi `core.*` ở đó (dùng `unicodedata` trực tiếp).
+
+**Word: ô gộp ngang** (`core.docx_table_rows`): python-docx trả cùng 1 ô lặp ở mọi cột bị gộp (`I. HĐND VÀ UBND` lặp 6 lần) nên tiêu đề nhóm không nhận ra và thành "Thiếu email" (MuongVang, TanHoa, VinhTuong). Chỉ giữ nội dung ở cột đầu của ô gộp, các cột sau rỗng. Tiêu đề nhóm dạng `I. TÊN NHÓM` nằm ở cột STT, các ô khác rỗng → `_is_group_header_row` nhận (`_ROMAN_TITLE_IN_STT_RE`). Tiêu đề nhóm con **đánh số Ả Rập** (ThaiHoa `1 | Văn Phòng HĐND và UBND xã`, `5 | TTPV HCC`): chỉ khi mọi ô khác rỗng và (tên bắt đầu bằng loại cơ quan, **hoặc** dòng kế tiếp là người thật không có STT và có email).
+
 **Excel**
 - `.xls` đọc bằng xlrd, đã vá `handle_datemode` (`_patch_xlrd_tolerant_datemode`) cho file có VBA lỗi.
 - **Excel nhiều sheet — cả 2 chế độ** (`core.analyze_sheets`, `SHEET_SKIP_MIN_EMAILS=3`, `SHEET_SKIP_OVERLAP=0.5`): trước đây Chế độ 2 chỉ đọc sheet đang mở khi lưu (`wb.active`, mất 43 người của TTYT Bác Ái, không cảnh báo), Chế độ 1 đọc mù quáng mọi sheet (kéo 16 người "đầu mối" của Sơn La vào kết quả). Quy tắc: đọc sheet **có email**; **bỏ sheet có ≥ 3 email mà ≥ 50% đã xuất hiện ở các sheet trước** (bản nháp/phụ lục: Thái Nguyên "Trang_tính1" 62/94, Sơn La phụ lục đầu mối 68/85) kèm cảnh báo nêu số email mới bị bỏ; sheet không có email (danh mục VINATOM) không đọc; không sheet nào có email → đọc sheet đầu như cũ. Chế độ 2 gọi với `sheet="tên"` thì **chỉ** đọc sheet đó, không áp quy tắc bỏ trùng (người dùng đã chủ động chọn). Hàm dùng chung: `core.read_excel_sheets` (giữ nguyên tên sheet, kể cả dấu cách thừa như `"Người dùng "`), `core.list_excel_sheets`. **STT nhảy số tính riêng từng sheet.** Xã/phường/cơ quan ban hành tính lại **cho từng bảng** (từng sheet), `unit_cache` khoá theo `(đơn vị thô, xã ban hành, cơ quan ban hành)`.
@@ -124,6 +131,13 @@ GUI (`gui.py`): 2 tab chế độ ở đầu trang; toàn bộ trang cuộn đư
 - **Họ tên bị ngắt 2 dòng vật lý** (Gia Lai: `Cao Thanh` + dòng sau `Thương`, nhiều khi kèm SĐT lặp lại): dòng chỉ có **đúng 1 từ chữ cái** ở **đúng cột tên** của người vừa thêm, không email/STT, ô khác rỗng (hoặc chỉ là SĐT trùng SĐT người trước), tên trước ≤ 3 từ, cùng kiểu viết hoa, không phải từ chỉ cơ quan → nối vào họ tên (`_is_name_continuation`; Chế độ 1: `core.merge_name_fragment_rows`). Từng bị hiểu là tiêu đề nhóm (thành đơn vị của người kế tiếp) hoặc người ảo (tên `Khánh`, đơn vị `Vy`). Luôn kèm **cảnh báo** "Đã nối N họ tên bị ngắt thành 2 dòng (STT ...)" để đối chiếu.
 - **Email bị cắt theo viền ô bảng PDF** (Phú Thọ Nguyệt Đức, 9 người): pdfplumber nhận nhầm viền cột email chỉ rộng ~31pt, ô email chỉ còn mảnh đầu (`Hainv`, `Huypq`, `dthuong21`), phần còn lại rơi ngoài bảng, văn bản thô xen kẽ các cột nên không nối được. `core.repair_cut_email_cells` (gọi ở cả `core.read_pdf_file` và `v2._read_tables_and_context`, **trước** khi phân tích dòng): dòng không có ô nào chứa `@` mà có mảnh (cột ≥ 2, 1 từ chỉ ký tự email, có chữ cái) → tìm từ trên trang bắt đầu bằng mảnh (`extract_words`, toạ độ), nối các từ **cùng cột** (|Δx0| < 3) ở dòng ngay dưới (cách < 16pt), bỏ SĐT của chính dòng bị dính vào (`phutho.0387875219`), dừng khi đủ tên miền hoặc gặp email của dòng sau; **chỉ nhận** khi tên miền == tên miền phổ biến nhất của tệp (≥ 3 lần) và phần trước `@` bắt đầu bằng mảnh. Luôn kèm cảnh báo "Khôi phục N email bị cắt theo viền ô bảng PDF (STT ...)".
 - **Tiêu đề cột bị ngắt dòng** (`Số điện\nthoại sử\ndụng Zalo`): `_strip_accents_lower` gộp mọi khoảng trắng/xuống dòng thành 1 dấu cách, nếu không cả cột SĐT bị bỏ (Chế độ 1 Nguyệt Đức từng ra 0 SĐT).
+- **SĐT 9 chữ số** (thiếu 0 đầu, `986311959`): `_cell_is_phone` nhận theo nội dung nếu `normalize_phone` chuẩn hoá được (TamDuong từng mất 63 SĐT ở Chế độ 2). STT không bao giờ dài 9 chữ số.
+- **Ô email lạ** (`_is_email_like_cell`, `_is_bare_email_cell`): ô có `@` chỉ gồm ký tự email + khoảng trắng (`NamDH@phutho. gov.vn`) vẫn là ô email (để `normalize_email` quyết, trước đây mất Đinh Hải Nam); ô không có `@` nhưng giống email (`HuyenBT.tanhoa.phutho.gov.vn`, `...001phutho.edu.vn`: không khoảng trắng, ≥ 2 dấu chấm, đuôi .vn/.com/.net) → giữ làm email gốc, lý do "Email sai định dạng" (trước đây "Thiếu email" và mất giá trị gốc).
+- **Khôi phục STT bố cục 2 dòng/người** (LamThao.pdf, `core._name_line_above`): văn bản thô là `Nguyễn Thị Hiền 0344748822` / `92 Trường TH Lâm Thao, xã Lâm Thao, tỉnh Phú Thọ hiennt...@phutho.edu.vn` (tên + SĐT ở dòng **trên** dòng STT). Điều kiện chặt: dòng STT không có tên (phần trước email, sau khi bỏ SĐT, rỗng hoặc bắt đầu bằng từ chỉ đơn vị), dòng trên không có STT/email và có SĐT → dùng dòng trên và **không gộp dòng dưới** (dòng dưới là người kế tiếp; trước đây lấy nhầm SĐT của họ). Tách tên khỏi đơn vị tại `Trường/Trạm/Xã/Phường/Bệnh viện/Chi cục/Cục/Thanh tra/Công an...` (`UNIT_KEYWORD_SPLIT_RE`, chọn từ khoá đầu tiên ở vị trí > 0). Chung cho 2 chế độ (`v2` gọi `core.find_stt_lines` + `core.split_recovered_stt_line`). Chốt an toàn: SĐT khôi phục đã thuộc người khác → để trống + cảnh báo; dòng "mảnh" của bảng (chỉ tên + SĐT, không STT/email, đầu trang) trùng tên + SĐT với người vừa khôi phục → xoá khỏi Cần kiểm tra (`_drop_fragment_issues`); `recovered_names` liệt kê họ tên đã lấy được trong Nhật ký để soát.
+- **Tiêu đề SĐT lạ** (Chế độ 1): thêm từ khoá `so dt`, `zalo`, `dien loai` ("Số ĐT sử dụng Zalo", gõ sai "Điện loại liên hệ"); nếu vẫn không nhận ra cột SĐT, `_guess_phone_column` chọn cột chưa gán có ≥ 60% ô chuẩn hoá được thành SĐT, kèm cảnh báo. LamThao Chế độ 1 từng mất 213/223 SĐT.
+- **Ghép dòng bị ngắt**: không nối dòng khi ô SĐT của cả 2 dòng đều là số điện thoại đầy đủ (`_is_full_phone_cell`; BinhNguyen: `0336688595` + `0971053516` thành số hỏng).
+- **Văn bản tự do** không có email mà là `Người liên hệ: ...`, `PHỤ LỤC`, `Thông tin chung` (`_FREE_TEXT_SKIP_RE`) không còn bị đọc thành người.
+- **Cảnh báo STT khi nguồn thưa**: thiếu > 30% dãy 1..max (`core.stt_gap_message`) thì đổi câu thành "nguồn đánh số không liên tục (thiếu N/max...) — thường là danh sách đã lọc bớt từ danh sách lớn hơn" (TienLu, SoYTe, MuongVang bỏ STT 1-52...), vẫn nhắc đối chiếu.
 - **STT lệch cột**: nếu ô đầu rỗng, STT = ô có nội dung đầu tiên **nếu là số ≤ 4 chữ số hoặc số La Mã** (không lấy SĐT/tên; Gia Lai STT 8, 9 từng ra tên rỗng).
 - `_flatten_doc_tables`: nối mọi bảng thành 1 danh sách; bắt đầu từ bảng **đầu tiên có tiêu đề hợp lệ** (file Word hay có bảng quốc hiệu/tiêu ngữ đứng trước); bỏ dòng **tiêu đề lặp lại** ở đầu mỗi trang.
 - Không dùng `core.merge_multi_page_tables` cho Chế độ 2 (nó cắt danh sách khi số cột đổi).
@@ -173,7 +187,7 @@ Chạy: `python regression.py --detail` (đọc `test_data/` với tên ngắn: 
 | Danh_sa_üch__Éo_é_Çng_Tha_üp.pdf (Đồng Tháp) | 2381 | 2229 |
 | ĐT02_Đăng_ký_danh_sách_người_dùng_CLEX.pdf (Kon Đào) | 10 | 10 |
 | Tả_Phìn.pdf | 80 | 78 |
-| DangKy_2109.xlsx (Cần Thơ) | 5000 | 4964 |
+| DangKy_2109.xlsx (Cần Thơ) | 5000 | 4963 |
 | BẢO_TÀNG_MỸ_THUẬT_THÀNH_PHỐ_HỒ_CHÍ_MINH.doc | 10 | 10 |
 | Văn_phòng_UBND_thành_phố_Đà_Nẵng.xlsx | 82 | 82 |
 | Xa_Long_Hoa_..._Vr_25_tháng_9_.xlsx | 96 | 95 |
@@ -183,10 +197,26 @@ Chạy: `python regression.py --detail` (đọc `test_data/` với tên ngắn: 
 | Danh_sach_tao_tai_khoan_..._Dot_4.xlsx (Đắk Lắk) | 330 | 324 |
 | 11190_SNNMT-VP_30092026-signed_01.pdf (Sở NN&MT Gia Lai) | 9 | 9 |
 | TTYT_KV_BAC_AI.xlsx (2 sheet: TTYT Bác Ái 43 + Đảng ủy P. Tam Long 36) | 79 | 79 |
-| 2__TH_danh_sách_đăng_ký_..._kem_CV_.xlsx (Sơn La, phụ lục đầu mối bị bỏ) | 5981 | 5043 |
+| 2__TH_danh_sách_đăng_ký_..._kem_CV_.xlsx (Sơn La, phụ lục đầu mối bị bỏ) | 5981 | 5026 |
 | cv_cc_danh_sach_ccvc_dk_tao_tk_..._ptn...pdf (Phú Thọ, P. Thống Nhất) | 69 | 67 |
 | 261005_ra_soat_cung_cap_danh_sach_ccvc_...pdf (Phú Thọ, xã Nguyệt Đức) | 54 | 53 |
 | danh_sach_dang_ky_tai_khoan_ai_xa_dai_dong-5.xlsx (Phú Thọ, xã Đại Đồng) | 172 | 169 |
+| VinhTuong.docx | 67 | 67 |
+| TienLu.xlsx | 346 | 340 |
+| ThaiHoa.docx | 42 | 40 |
+| MaiChau.xlsx | 55 | 54 |
+| HoiThinh.pdf | 54 | 53 |
+| DongLuong.docx | 28 | 28 |
+| TanHoa.docx | 53 | 51 |
+| BinhNguyen.doc | 220 | 218 |
+| MuongVang.doc | 104 | 102 |
+| LamThao.pdf | 228 | 223 |
+| TamDuong.docx | 404 | 393 |
+| SoTaiChinh.xlsx | 216 | 213 |
+| SoXayDung.pdf | 151 | 144 |
+| SoYTe.xlsx | 25 | 25 |
+
+Chế độ 1 đổi ngày 13/10/2026: Cần Thơ 4964 → 4963 và Sơn La 5043 → 5026 (email có dấu cách trong tên miền bị loại thay vì nối liền thành tên miền sai: 17 `sonla gov.vn` + 1 `cantho.gov.v n`); các file cũ khác không đổi số. Lô 14 tệp Phú Thọ ngày 13/10 thêm vào bảng (tệp gốc ở `Downloads\đăng ký AI ngày 13`, tên ngắn trong `test_data/`).
 
 Chế độ 1 đổi ngày 06/10/2026 (quy tắc email Phú Thọ): Đồng Tháp 2239 → 2229, Cần Thơ 4968 → 4964, Đắk Lắk 325 → 324, Sơn La 5053 → 5043 — toàn bộ là email bị cắt giữa từ (đã soát từng dòng); các file khác không đổi.
 
@@ -200,7 +230,7 @@ Cảnh báo mong đợi (các file khác không có): Đồng Tháp chế độ 
 
 | File | Tổ chức mặc định | Đọc | KQ | CKT |
 |---|---|---|---|---|
-| DangKy_2109.xlsx | Cần Thơ | 5000 | 4964 | 36 |
+| DangKy_2109.xlsx | Cần Thơ | 5000 | 4963 | 37 |
 | TK_AI_VNLNTVN.XLS | Viện Năng lượng nguyên tử Việt Nam | 539 | 532 | 7 |
 | CV_163_SXD_THAI_NGUYEN_...AI.xls | Thái Nguyên | 155 | 153 | 2 |
 | ĐT02_Đăng_ký_danh_sách_người_dùng_CLEX.pdf | Quảng Ngãi | 10 | 10 | 0 |
@@ -211,7 +241,7 @@ Cảnh báo mong đợi (các file khác không có): Đồng Tháp chế độ 
 | P_Chánh_Hưng.docx | Hồ Chí Minh | 2 | 2 | 0 |
 | P_Long_Hòa.doc (cần Word+pywin32 hoặc LibreOffice) | Hồ Chí Minh | 97 | 0 | 97 |
 | BẢO_TÀNG_MỸ_THUẬT_THÀNH_PHỐ_HỒ_CHÍ_MINH.doc | Hồ Chí Minh | 10 | 10 | 0 |
-| 2__TH_danh_sách_đăng_ký_..._kem_CV_.xlsx (Sơn La) | Sơn La | 5981 | 5043 | 938 |
+| 2__TH_danh_sách_đăng_ký_..._kem_CV_.xlsx (Sơn La) | Sơn La | 5981 | 5026 | 955 |
 | Văn_phòng_UBND_thành_phố_Đà_Nẵng.xlsx | Đà Nẵng | 82 | 82 | 0 |
 | Xa_Long_Hoa_..._Vr_25_tháng_9_.xlsx | Hồ Chí Minh | 96 | 95 | 1 |
 | Support_excel.xlsx | Ninh Bình | 5417 | 4327 | 1090 |
@@ -223,9 +253,25 @@ Cảnh báo mong đợi (các file khác không có): Đồng Tháp chế độ 
 | Phú Thọ (P. Thống Nhất) | Phú Thọ | 69 | 67 | 2 |
 | Phú Thọ (xã Nguyệt Đức) | Phú Thọ | 54 | 53 | 1 |
 | Phú Thọ (xã Đại Đồng) | Phú Thọ | 172 | 169 | 3 |
+| VinhTuong.docx | Phú Thọ | 67 | 67 | 0 |
+| TienLu.xlsx | Phú Thọ | 346 | 340 | 6 |
+| ThaiHoa.docx | Phú Thọ | 42 | 40 | 2 |
+| MaiChau.xlsx | Phú Thọ | 55 | 54 | 1 |
+| HoiThinh.pdf | Phú Thọ | 54 | 53 | 1 |
+| DongLuong.docx | Phú Thọ | 28 | 28 | 0 |
+| TanHoa.docx | Phú Thọ | 53 | 51 | 2 |
+| BinhNguyen.doc | Phú Thọ | 220 | 218 | 2 |
+| MuongVang.doc | Phú Thọ | 104 | 102 | 2 |
+| LamThao.pdf | Phú Thọ | 228 | 223 | 5 |
+| TamDuong.docx | Phú Thọ | 404 | 393 | 11 |
+| SoTaiChinh.xlsx | Phú Thọ | 216 | 213 | 3 |
+| SoXayDung.pdf | Phú Thọ | 151 | 144 | 7 |
+| SoYTe.xlsx | Phú Thọ | 25 | 25 | 0 |
 
 Kiểm tra định tính (không chỉ đếm):
 - **Phú Thọ:** mỗi tệp 1 đơn vị (`Phường Thống Nhất`/`Xã Nguyệt Đức`/`Xã Đại Đồng - Phú Thọ`), Tổ chức `TỈNH PHÚ THỌ`. Cần kiểm tra: Thống Nhất STT 36 (email có dấu cách), STT 65 (trùng STT 29); Nguyệt Đức STT 33 (Trần Thị Huệ trùng Trần Thị Huế STT 18); Đại Đồng STT 21 (email có dấu cách), 16 (trùng 15), 53 (Bùi Văn Sợn trùng Bùi Văn Sòn STT 42). Nguyệt Đức: 9 email khôi phục STT 29, 30, 31, 32, 34, 35, 37, 39, 40.
+- **Lô Phú Thọ 13/10:** mỗi tệp 1 đơn vị xã/phường (`Xã Vĩnh Tường`, `Xã Tiên Lữ`, `Xã Thái Hòa`, `Xã Mai Châu`, `Xã Hội Thịnh`, `Xã Đồng Lương`, `Phường Tân Hoà`, `Xã Bình Nguyên`, `Xã Mường Vang`, `Xã Lâm Thao`, `Xã Tam Dương` + `- Phú Thọ`), `Sở Tài chính` 1 đơn vị, `Sở Xây dựng` 12 đơn vị (giữ nguyên, xem câu hỏi gộp đơn vị cấp dưới Sở), `Sở Y tế` 7 đơn vị (Sở Y tế 4, Văn phòng Sở Y tế 6, Chi cục Dân số 9, Chi cục An toàn thực phẩm 1, Phòng Kế hoạch Tài chính 1, Phòng Nghiệp vụ Y 1, Phòng Bảo hiểm y tế và Công nghệ thông tin 3). Số SĐT: TamDuong 388/393, LamThao 222/223 (STT 35 nguồn `098143755` thiếu số), TanHoa 50/51, BinhNguyen 137/218, ThaiHoa 32/40. LamThao 7 người khôi phục đúng họ tên + SĐT (STT 53, 71, 92, 115, 138, 161, 184 — xem `LAMTHAO_EXPECT` trong `regression.py`). TanHoa giữ Đinh Hải Nam (`NamDH@phutho. gov.vn`).
+- Cảnh báo mong đợi lô này: TienLu/SoYTe/MuongVang/VinhTuong/DongLuong "nguồn đánh số không liên tục"; MaiChau "STT nhảy số (39)"; ThaiHoa "STT nhảy số (4)"; LamThao "Đã khôi phục STT 14, 34, 53, 71, 92, 115, 138, 161, 184".
 - Đại Đồng cảnh báo mong đợi "STT nhảy số (170, 172, 174)" — nguồn bỏ số thật. STT 158 Phạm Thúy Ngà cột SĐT ghi "Nghỉ hưu" (SĐT để trống, vẫn tạo tài khoản) — hỏi người dùng. Thống Nhất STT 53/54 cùng SĐT `0382670103`.
 - **Gia Lai:** 9 họ tên đầy đủ (`Cao Thanh Thương`, `Nguyễn Thị Tố Trân`, `Trần Đình Chương`, `Hà Thị Thanh Hương`, `Nguyễn Văn Hoan`, `Nguyễn Thị Thế Vy`, `Trần Quốc Khánh`, `Đoàn Ngọc Có`, `Vũ Ngọc An`), đơn vị `Sở Nông nghiệp và Môi trường - Gia Lai`, `TỈNH GIA LAI`.
 - **TTYT Bác Ái / Tam Long, theo từng sheet** (`extract_v2_batch` với `(path, sheet, to_chuc)`): sheet 1 → `Trung Tâm Y Tế Khu Vực Bác Ái - Khánh Hòa` / `TỈNH KHÁNH HÒA` (43 người, Bác Ái thuộc Ninh Thuận cũ); sheet 2 → `Phường Tam Long - Hồ Chí Minh` / `THÀNH PHỐ HỒ CHÍ MINH` (36 người, email `@tphcm.gov.vn`). Tổng 79, 0 cần kiểm tra. Với `sheet=None` và 1 Tổ chức mặc định thì cả 79 người cùng 1 tỉnh (đúng chỉ khi tệp thuộc 1 tỉnh).
@@ -256,4 +302,7 @@ GUI kiểm tra được bằng script (dựng `gui.ContactExtractorGUI()`, gán 
 - **Họ tên có dấu chấm giữa chữ** (TTYT Bác Ái: `Nguyễn T.trang Vương`) hiện ra `Nguyễn Ttrang Vương` vì bước bỏ ký tự đặc biệt xoá dấu chấm làm dính 2 từ. Đề xuất đổi dấu chấm giữa chữ thành khoảng trắng (`Nguyễn T Trang Vương`); chưa làm, người dùng chưa quyết (đổi ở `core.normalize_name` → ảnh hưởng cả 2 chế độ, cần chạy hồi quy).
 - Chế độ 1 chưa có ghi chú "trùng với dòng nào" (chỉ Chế độ 2) và vẫn đọc PDF theo vị trí cột (chỉ gom ô tiêu đề gộp khi có bằng chứng, xem `collapse_header_spans`).
 - Bỏ sheet trùng: 17 email "mới" trong phụ lục đầu mối Sơn La (16 người sau khi chuẩn hoá) không được đọc; nếu muốn xem họ, bật lại sheet trong GUI (họ sẽ vào kết quả cùng 89 dòng trùng ở Cần kiểm tra).
+- **Tên miền gõ sai 1-2 ký tự lọt vào kết quả** (chờ người dùng quyết định): `phuttho.edu.vn` (TienLu 15 người, cùng 1 trường), `phutho.eedu.vn`, `vinhphucedu.vn`, `phutho.gov.vnv`, `pthutho.gov.vn`, `putho.gov.vn`. Đề xuất: so khoảng cách Levenshtein ≤ 2 với tên miền phổ biến của tệp (≥ 10 lần, nhiều gấp ≥ 5; `phuttho.edu.vn` xuất hiện 15 lần nên điều kiện là "phổ biến hơn nhiều" chứ không phải "chỉ xuất hiện 1 lần"; `phutho.edu.vn`↔`.gov.vn`↔`.dcs.vn` cách 3 nên ngưỡng ≤ 2 an toàn trên lô này), rồi hoặc (a) tự sửa + ghi chú, hoặc (b) loại vào Cần kiểm tra ("Email sai tên miền"). Hiện giữ nguyên ở cả 2 chế độ. Phải chạy hồi quy mọi tệp cũ trước khi bật.
+- **Xã chủ đạo khi văn bản không ghi cơ quan ban hành** (đề xuất cũ cho MaiChau): sau khi sửa NFD, MaiChau đã ra `Xã Mai Châu` cho cả 54 người (tiêu đề bảng có tên xã) nên chưa cần; chưa làm.
+- Lô 13/10 — dữ liệu nguồn cần báo người dùng: email dùng chung/nhầm người (SoXayDung `hungnv.soxaydung@` cho 3 người STT 12/20/79; DongLuong STT 8-10 email không khớp tên; ThaiHoa Dương Thị Giang/Hà Minh Luận dùng email người khác; LamThao trùng 80/129, 86/132, 174/175, 147/190, 211/218; TienLu 152/195, 188/211, 212/273; TamDuong 7 cặp; SoTaiChinh 96/133, 137/152, 130/196; MuongVang 77/133 Bùi Thị Anh/Ánh); VinhTuong STT 58 "Văn thư TTVH" là hộp thư chung (vẫn tạo tài khoản, chờ quyết); email có dấu (TanHoa STT 8 `NgọcLS`, SoXayDung STT 126/133 `Namnđ`, `Chungđđ`); email thiếu/cắt (TanHoa STT 5 thiếu `@`; TamDuong 2 người `@phuthc`, 1 thiếu `@`, Nguyễn Văn Anh "Chưa được cấp mail công vụ"; MuongVang STT 112 `@phutho.edu`; TienLu 76, 153, 164; MaiChau STT 50 `ptgiang3 dsd.maichau@`); BinhNguyen 103/241 dòng không ghi SĐT, 1 dòng chỉ có SĐT `0971053516` (Trường Tiểu học Bình Nguyên); ThaiHoa nhóm Phòng Kinh tế không ghi SĐT.
 - Các dòng `Phó Giám đốc Sở` ở bảng phụ 1 cột cuối trang PDF (Gia Lai) vẫn bị coi là tiêu đề nhóm (vô hại vì đứng cuối); nếu gặp PDF có bảng 1 cột xen giữa danh sách thì kiểm tra lại.
