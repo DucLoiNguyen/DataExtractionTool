@@ -1,0 +1,1480 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+gui.py
+======
+Giao diện đồ hoạ DUY NHẤT (Tkinter) cho tool tạo danh sách tài khoản, hỗ
+trợ 2 CHẾ ĐỘ trích xuất (chọn bằng nút chọn ở đầu trang):
+
+  - CHẾ ĐỘ 1: Trích xuất từ tài liệu (PDF/Word/Excel/CSV), 1 tệp mỗi lần
+    — dùng khi có công văn/danh sách tự do, cần trích Email/Họ tên/SĐT.
+    Xuất theo file mẫu "cls_template_users.xlsx".
+  - CHẾ ĐỘ 2: Chuẩn hoá danh sách đăng ký (Excel/PDF/Word có cột hoặc ngữ
+    cảnh Đơn vị công
+    tác) — dùng khi đã có bảng Họ và tên/Đơn vị công tác/Email/SĐT, cần
+    chuẩn hoá thêm Đơn vị/Tổ chức. Xuất theo file mẫu "TemplateV2.xlsx".
+    Xử lý NHIỀU tệp 1 lần (mỗi tệp 1 "Tổ chức mặc định" riêng, lọc trùng
+    email trong từng tệp), gộp vào 1 tệp kết quả.
+
+Cả 2 chế độ đều:
+  - Áp dụng ĐẦY ĐỦ 3 quy tắc chuẩn hoá gốc (email đúng định dạng + viết
+    thường, số điện thoại chuẩn VN, họ tên viết hoa đúng cách) — không bao
+    giờ tự bịa dữ liệu thiếu.
+  - Có tab "Cần kiểm tra" liệt kê ĐẦY ĐỦ các dòng bị loại kèm dữ liệu gốc
+    và lý do cụ thể (thiếu email / email sai định dạng / trùng email) —
+    không chỉ báo 1 con số tổng.
+  - CHƯA ghi ra tệp cho đến khi bấm "Xuất tệp kết quả..." và chọn nơi lưu.
+
+extract_contacts.py và process_template_v2.py phải nằm CÙNG THƯ MỤC với
+file này.
+
+Phím tắt: Ctrl+O thêm tệp, Enter trích xuất, Ctrl+S xuất tệp kết quả.
+
+Chạy:
+    python3 gui.py
+"""
+
+import os
+import sys
+import threading
+import tkinter as tk
+import tkinter.font as tkfont
+import unicodedata
+from tkinter import filedialog, messagebox, ttk
+
+import extract_contacts as core
+import process_template_v2 as v2
+
+THIS_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# .doc (Word 97-2003) duoc ho tro qua LibreOffice (xem core._convert_via_libreoffice)
+# - phai co trong bo loc, neu khong nguoi dung khong thay tep .doc trong hop thoai.
+MODE1_INPUT_FILETYPES = [
+    ("Tất cả tệp hỗ trợ", "*.pdf *.docx *.doc *.xlsx *.xls *.csv"),
+    ("PDF", "*.pdf"), ("Word", "*.docx *.doc"), ("Excel", "*.xlsx *.xls"),
+    ("CSV", "*.csv"), ("Tất cả tệp", "*.*"),
+]
+MODE2_INPUT_FILETYPES = [
+    ("Tất cả tệp hỗ trợ", "*.xlsx *.xls *.pdf *.docx *.doc *.csv"),
+    ("Excel", "*.xlsx *.xls"), ("PDF", "*.pdf"), ("Word", "*.docx *.doc"),
+    ("CSV", "*.csv"), ("Tất cả tệp", "*.*"),
+]
+EXCEL_FILETYPES = [("Excel", "*.xlsx"), ("Tất cả tệp", "*.*")]
+
+PREVIEW_LIMIT = 200
+
+FILE_ICONS = {".pdf": "\U0001F4D5", ".docx": "\U0001F4D8", ".doc": "\U0001F4D8", ".xlsx": "\U0001F4D7",
+              ".xls": "\U0001F4D7", ".csv": "\U0001F4C4"}
+
+# ----- Cot cho CHE DO 1 -----
+M1_PREVIEW_COLUMNS = ("email", "password", "name", "phone")
+M1_PREVIEW_HEADINGS = {"email": "Email", "password": "Mật khẩu", "name": "Họ và tên", "phone": "Điện thoại"}
+M1_SORTABLE = {"email": "email", "name": "name", "phone": "phone"}
+
+M1_ISSUE_COLUMNS = ("source", "row_number", "raw_email", "raw_name", "raw_phone", "reason")
+M1_ISSUE_HEADINGS = {
+    "source": "Tệp nguồn", "row_number": "STT", "raw_email": "Email (gốc)",
+    "raw_name": "Họ và tên (gốc)", "raw_phone": "Điện thoại (gốc)", "reason": "Lý do",
+}
+M1_ISSUE_SORTABLE = {"source": "source", "row_number": "row_number", "reason": "reason"}
+
+# ----- Cot cho CHE DO 2 -----
+# Che do 2 xu ly nhieu tep 1 lan -> them cot "Tệp nguồn" (chi hien thi, khong
+# ghi vao file ket qua theo mau).
+M2_PREVIEW_COLUMNS = ("name", "email", "password", "phone", "don_vi", "to_chuc", "source")
+M2_PREVIEW_HEADINGS = {"name": "Tên tài khoản", "email": "Email", "password": "Mật khẩu", "phone": "SĐT",
+                        "don_vi": "Đơn vị", "to_chuc": "Tổ chức", "source": "Tệp nguồn"}
+M2_SORTABLE = {"name": "name", "email": "email", "phone": "phone", "don_vi": "don_vi", "to_chuc": "to_chuc",
+               "source": "source"}
+
+M2_ISSUE_COLUMNS = ("source", "stt", "raw_name", "raw_email", "raw_phone", "raw_unit", "note", "reason")
+M2_ISSUE_HEADINGS = {
+    "source": "Tệp nguồn", "stt": "STT", "raw_name": "Họ và tên (gốc)", "raw_email": "Email (gốc)",
+    "raw_phone": "Điện thoại (gốc)", "raw_unit": "Đơn vị công tác (gốc)", "note": "Ghi chú", "reason": "Lý do",
+}
+M2_ISSUE_SORTABLE = {"source": "source", "stt": "stt", "raw_name": "raw_name", "reason": "reason"}
+
+# ---------------------------------------------------------------------------
+# BẢNG MÀU / THIẾT KẾ - theo DESIGN.md (giao diện "cream + coral + dark")
+# ---------------------------------------------------------------------------
+# Nen kem am (canvas) thay cho trang/xam lanh; coral la mau thuong hieu duy nhat
+# (chi dung cho nut chinh, tab/hang duoc chon, so ket qua); be mat toi (surface-dark)
+# cho nhat ky xu ly va nut xuat tep. Khong them tong mau thu 4 (khong xanh la/tim).
+COLOR_BG = "#faf9f5"            # canvas
+COLOR_CARD = "#faf9f5"          # the chuc nang: nen canvas + vien hairline (model-comparison-card)
+COLOR_SURFACE_SOFT = "#f5f0e8"  # hang le cua bang, dai nen rat nhe
+COLOR_SURFACE_CARD = "#efe9de"  # tab dang chon, tieu de bang, badge
+COLOR_BORDER = "#e6dfd8"        # hairline
+COLOR_HEADER_BG = "#faf9f5"     # top-nav cung nen canvas
+COLOR_ACCENT = "#cc785c"        # primary (coral)
+COLOR_ACCENT_DARK = "#a9583e"   # primary-active
+COLOR_ACCENT_DISABLED = "#e6dfd8"
+COLOR_ACCENT_SOFT = COLOR_SURFACE_CARD
+COLOR_SUCCESS = "#5db872"
+COLOR_SUCCESS_BG = "#eaf3e8"
+COLOR_WARN = "#a67c0f"          # warning (#d4a017) dam hon cho chu tren nen kem
+COLOR_WARN_BG = "#faf1e0"
+COLOR_DANGER = "#c64545"        # error
+COLOR_DANGER_BG = "#f8ece7"
+COLOR_INK = "#141413"           # tieu de
+COLOR_TEXT = "#3d3d3a"          # body
+COLOR_TEXT_MUTED = "#6c6a64"    # muted
+COLOR_DARK = "#181715"          # surface-dark
+COLOR_DARK_ELEVATED = "#252320"
+COLOR_ON_DARK = "#faf9f5"
+COLOR_CONSOLE_BG = COLOR_DARK
+COLOR_CONSOLE_FG = COLOR_ON_DARK
+COLOR_CONSOLE_OK = "#5db8a6"    # accent-teal
+COLOR_CONSOLE_ERR = "#e08a72"
+COLOR_CONSOLE_WARN = "#e8a55a"  # accent-amber
+COLOR_ROW_ODD = COLOR_BG
+COLOR_ROW_EVEN = COLOR_SURFACE_SOFT
+
+# ----- DO NOI KHOI (bong do am + vat 3D cua nut) -----
+# Tk khong co bong do mem/bo goc, nen tao do noi bang cac lop vien lech xuong
+# duoi-phai (the) va vien sang/toi (nut, o nhap). Tong mau am, khong dung xam lanh.
+COLOR_SHADOW_NEAR = COLOR_SURFACE_CARD  # lop bong sat the
+COLOR_SHADOW_FAR = COLOR_SURFACE_SOFT   # lop bong ngoai, nhat dan ve phia nen
+COLOR_EDGE_LIGHT = COLOR_BG             # canh sang (tren-trai)
+COLOR_EDGE_SHADE = COLOR_BORDER         # canh toi (duoi-phai)
+COLOR_ACCENT_LIGHT = COLOR_ACCENT       # canh sang cua nut coral
+COLOR_ACCENT_BORDER = COLOR_ACCENT_DARK
+COLOR_DARK_LIGHT = COLOR_DARK_ELEVATED  # canh sang cua nut toi
+COLOR_DARK_SHADE = COLOR_DARK
+# Tat ca mau tren deu LAY LAI tu bang mau goc o tren - khong them sac moi.
+
+
+FONTS_DIR = os.path.join(THIS_DIR, "fonts")
+
+
+def _register_private_fonts():
+    """Nap cac tep .ttf/.otf trong thu muc fonts/ canh gui.py de dung RIENG cho
+    tien trinh nay (khong can cai vao he thong, khong bi loi 'cai cho nguoi
+    dung hien tai' ma Tk khong thay). Hien chi ho tro Windows; he dieu hanh
+    khac bo qua va roi ve font co san. Tra ve so tep nap duoc."""
+    if sys.platform != "win32" or not os.path.isdir(FONTS_DIR):
+        return 0
+    try:
+        import ctypes
+        add_font = ctypes.windll.gdi32.AddFontResourceExW
+    except Exception:
+        return 0
+    FR_PRIVATE = 0x10
+    loaded = 0
+    for name in sorted(os.listdir(FONTS_DIR)):
+        if name.lower().endswith((".ttf", ".otf")):
+            try:
+                if add_font(os.path.join(FONTS_DIR, name), FR_PRIVATE, 0):
+                    loaded += 1
+            except Exception:
+                pass
+    return loaded
+
+
+def _default_family():
+    """Ten font he thong THAT cua Tk. Khong dung chuoi 'TkDefaultFont' lam
+    ten ho font: Tk khong giai ma ten font co ten (named font) trong vi tri
+    ho font cua bo (ho, co, kieu), nen se roi ve font bat ky."""
+    try:
+        return tkfont.nametofont("TkDefaultFont").actual("family")
+    except Exception:
+        return "Segoe UI" if sys.platform == "win32" else "Helvetica"
+
+
+def _pick_font(preferred, fallback=None):
+    if fallback is None:
+        fallback = _default_family()
+    try:
+        families = {name.lower(): name for name in tkfont.families()}
+    except Exception:
+        return fallback
+    for name in preferred:
+        actual = families.get(name.lower())
+        if actual:
+            return actual
+    return fallback
+
+
+def _search_key(text):
+    if not text:
+        return ""
+    text = str(text).replace("đ", "d").replace("Đ", "D")
+    text = unicodedata.normalize("NFD", text)
+    text = "".join(ch for ch in text if unicodedata.category(ch) != "Mn")
+    return text.lower()
+
+
+def _fmt(n):
+    return f"{n:,}".replace(",", ".")
+
+
+def _attach_scrollbars(container, tree, horizontal=True):
+    """Dat tree + thanh cuon doc (va ngang) bang grid. Truoc day dung pack
+    side=left: khi tong do rong cac cot lon hon cho trong (Che do 2 them cot
+    "Tệp nguồn" -> 7 cot x 150px), thanh cuon pack sau bi day ra ngoai khung
+    va bien mat. Grid giu cot thanh cuon co dinh, tree co lai phan con lai."""
+    vsb = ttk.Scrollbar(container, orient="vertical", command=tree.yview)
+    tree.configure(yscrollcommand=vsb.set)
+    tree.grid(row=0, column=0, sticky="nsew")
+    vsb.grid(row=0, column=1, sticky="ns")
+    if horizontal:
+        hsb = ttk.Scrollbar(container, orient="horizontal", command=tree.xview)
+        tree.configure(xscrollcommand=hsb.set)
+        hsb.grid(row=1, column=0, sticky="ew")
+    container.grid_rowconfigure(0, weight=1)
+    container.grid_columnconfigure(0, weight=1)
+
+
+class ResultPanel:
+    """
+    Goi 1 'panel ket qua' hoan chinh cho 1 CHE DO: dong thong ke dang
+    pipeline + Notebook 2 tab (Xem truoc / Can kiem tra, moi tab co tim
+    kiem + sap xep) + nut Xuat tep. Dung CHUNG cau truc cho ca 2 che do,
+    chi khac BO COT duoc truyen vao luc khoi tao.
+
+    Day la 1 class thuan UI - KHONG chua logic xu ly du lieu (logic van o
+    extract_contacts.py / process_template_v2.py), chi hien thi va cho
+    phep loc/sap xep PHAN HIEN THI (khong lam thay doi du lieu goc).
+    """
+
+    def __init__(self, app, parent, key_field, preview_columns, preview_headings, preview_sortable,
+                 issue_columns, issue_headings, issue_sortable, row_to_values, issue_row_to_values,
+                 pipeline_labels):
+        self.app = app
+        self.key_field = key_field  # field dung de tim kiem chinh (khong dung truc tiep, xem row_to_values)
+        self.preview_columns = preview_columns
+        self.preview_sortable = preview_sortable
+        self.issue_columns = issue_columns
+        self.issue_sortable = issue_sortable
+        self.row_to_values = row_to_values            # ham: record -> tuple gia tri hien thi
+        self.issue_row_to_values = issue_row_to_values  # ham: issue -> tuple gia tri hien thi
+        self.pipeline_labels = pipeline_labels
+
+        self.records = None   # danh sach ban ghi hop le, THU TU GOC (khong doi khi loc/sap xep)
+        self.stats = None
+        self.preview_sort_field = None
+        self.preview_sort_reverse = False
+        self.issue_sort_field = None
+        self.issue_sort_reverse = False
+
+        self.frame = tk.Frame(parent, bg=COLOR_BG)
+        self._build(preview_headings, issue_headings)
+
+    # ------------------------------------------------------------------
+    def _build(self, preview_headings, issue_headings):
+        f = self.app.base_font_family
+
+        # ---- Thong ke dang pipeline ----
+        body3 = self.app._card(self.frame, "\U0001F4CA", "3. Thống kê")
+        self.stats_text = tk.Text(
+            body3, height=3, wrap="word", relief="flat", bg=COLOR_CARD,
+            font=(f, 11), state="disabled", cursor="arrow", highlightthickness=0, padx=0, pady=0,
+        )
+        self.stats_text.pack(fill="x")
+        self.stats_text.tag_configure("neutral", foreground=COLOR_INK, font=(f, 11))
+        self.stats_text.tag_configure("warn", foreground=COLOR_WARN, font=(f, 11))
+        self.stats_text.tag_configure("danger", foreground=COLOR_DANGER, font=(f, 11))
+        self.stats_text.tag_configure("arrow", foreground=COLOR_TEXT_MUTED, font=(f, 11))
+        # so ket qua cuoi: display serif 400 (khong dam), mau coral dam - mau thuong hieu, khong xanh la
+        self.stats_text.tag_configure("final", foreground=COLOR_ACCENT_DARK, font=(self.app.serif_font_family, 20, "bold"))
+        self.set_stats_placeholder()
+
+        # ---- The chua Notebook (Xem truoc / Can kiem tra) ----
+        body4 = self.app._card(self.frame, "\U0001F441", "4. Kết quả chi tiết")
+        self.notebook = ttk.Notebook(body4)
+        self.notebook.pack(fill="both", expand=True)
+
+        preview_tab = tk.Frame(self.notebook, bg=COLOR_CARD)
+        issues_tab = tk.Frame(self.notebook, bg=COLOR_CARD)
+        self.notebook.add(preview_tab, text="Xem trước (0)")
+        self.notebook.add(issues_tab, text="Cần kiểm tra (0)")
+
+        # --- tab Xem truoc ---
+        pbody = ttk.Frame(preview_tab, style="Card.TFrame")
+        pbody.pack(fill="both", expand=True, padx=4, pady=10)
+
+        prow = ttk.Frame(pbody, style="Card.TFrame")
+        prow.pack(fill="x", pady=(0, 8))
+        ttk.Label(prow, text="Tìm", style="Muted.TLabel").pack(side="left")
+        self.search_var = tk.StringVar()
+        self.search_var.trace_add("write", lambda *a: self.refresh_preview())
+        ttk.Entry(prow, textvariable=self.search_var).pack(side="left", fill="x", expand=True, padx=(6, 6))
+        ttk.Label(prow, text="Tìm kiếm \u00b7 bấm tiêu đề cột để sắp xếp",
+                  style="Muted.TLabel").pack(side="left")
+
+        tree_wrap = tk.Frame(pbody, bg=COLOR_BORDER)
+        tree_wrap.pack(fill="both", expand=True)
+        tree_inner = tk.Frame(tree_wrap, bg=COLOR_CARD)
+        tree_inner.pack(fill="both", expand=True, padx=1, pady=1)
+
+        self.preview_tree = ttk.Treeview(tree_inner, columns=self.preview_columns, show="headings", height=11)
+        for col in self.preview_columns:
+            if col in self.preview_sortable:
+                self.preview_tree.heading(col, text=preview_headings[col],
+                                           command=lambda c=col: self._sort_preview(c))
+            else:
+                self.preview_tree.heading(col, text=preview_headings[col])
+            self.preview_tree.column(col, width=150, minwidth=60, anchor="w")
+        _attach_scrollbars(tree_inner, self.preview_tree)
+        self.preview_tree.tag_configure("odd", background=COLOR_ROW_ODD)
+        self.preview_tree.tag_configure("even", background=COLOR_ROW_EVEN)
+
+        self.preview_note_var = tk.StringVar(value='Chưa có dữ liệu. Hãy bấm "Trích xuất & Xem trước".')
+        ttk.Label(pbody, textvariable=self.preview_note_var, style="Muted.TLabel").pack(anchor="w", pady=(8, 0))
+
+        # --- tab Can kiem tra ---
+        ibody = ttk.Frame(issues_tab, style="Card.TFrame")
+        ibody.pack(fill="both", expand=True, padx=4, pady=10)
+
+        irow = ttk.Frame(ibody, style="Card.TFrame")
+        irow.pack(fill="x", pady=(0, 8))
+        ttk.Label(irow, text="Tìm", style="Muted.TLabel").pack(side="left")
+        self.issue_search_var = tk.StringVar()
+        self.issue_search_var.trace_add("write", lambda *a: self.refresh_issues())
+        ttk.Entry(irow, textvariable=self.issue_search_var).pack(side="left", fill="x", expand=True, padx=(6, 6))
+        ttk.Label(irow, text="Tìm kiếm \u00b7 bấm tiêu đề cột để sắp xếp",
+                  style="Muted.TLabel").pack(side="left")
+
+        itree_wrap = tk.Frame(ibody, bg=COLOR_BORDER)
+        itree_wrap.pack(fill="both", expand=True)
+        itree_inner = tk.Frame(itree_wrap, bg=COLOR_CARD)
+        itree_inner.pack(fill="both", expand=True, padx=1, pady=1)
+
+        self.issues_tree = ttk.Treeview(itree_inner, columns=self.issue_columns, show="headings", height=11)
+        widths = {"source": 190, "row_number": 55, "stt": 55, "note": 300}
+        for col in self.issue_columns:
+            if col in self.issue_sortable:
+                self.issues_tree.heading(col, text=issue_headings[col],
+                                          command=lambda c=col: self._sort_issue(c))
+            else:
+                self.issues_tree.heading(col, text=issue_headings[col])
+            anchor = "center" if col in ("row_number", "stt") else "w"
+            self.issues_tree.column(col, width=widths.get(col, 140), minwidth=45, anchor=anchor)
+        _attach_scrollbars(itree_inner, self.issues_tree)
+        self.issues_tree.tag_configure("odd", background=COLOR_ROW_ODD)
+        self.issues_tree.tag_configure("even", background=COLOR_ROW_EVEN)
+        self.issues_tree.tag_configure("reason_missing", foreground=COLOR_WARN)
+        self.issues_tree.tag_configure("reason_invalid", foreground=COLOR_WARN)
+        self.issues_tree.tag_configure("reason_duplicate", foreground=COLOR_DANGER)
+
+        self.issues_note_var = tk.StringVar(
+            value="Chưa có dữ liệu. Các dòng bị loại (thiếu email, sai định dạng, trùng email) sẽ hiện ở đây."
+        )
+        ttk.Label(ibody, textvariable=self.issues_note_var, style="Muted.TLabel").pack(anchor="w", pady=(8, 0))
+
+        # ---- Nut xuat tep: KHONG con nam trong panel nua (xem ghi chu o
+        # class ContactExtractorGUI._build_widgets) - moi che do dung
+        # CHUNG 1 nut Xuat tep DUY NHAT, dat CO DINH o day man hinh, de
+        # luon nhin thay du man hinh nho/DPI cao den dau.
+
+    # ------------------------------------------------------------------
+    def pack(self):
+        self.frame.pack(fill="both", expand=True)
+
+    def pack_forget(self):
+        self.frame.pack_forget()
+
+    # ------------------------------------------------------------------
+    def set_stats_placeholder(self, text=None):
+        self.stats_text.config(state="normal", height=3)
+        self.stats_text.delete("1.0", tk.END)
+        self.stats_text.insert(
+            tk.END, text or 'Chưa có dữ liệu. Hãy bấm "Trích xuất & Xem trước" (hoặc nhấn Enter).', "arrow"
+        )
+        self.stats_text.config(state="disabled")
+
+    def set_stats_pipeline(self, segments):
+        """segments: list (text, tag) - xem cac ham _mode1_pipeline_segments /
+        _mode2_pipeline_segments trong app de biet cach dung cu the."""
+        self.stats_text.config(state="normal")
+        self.stats_text.delete("1.0", tk.END)
+        for text, tag in segments:
+            self.stats_text.insert(tk.END, text, tag)
+        # Gian chieu cao theo so dong hien thi (dong canh bao them vao cuoi
+        # khong duoc bi an mat).
+        try:
+            self.stats_text.update_idletasks()
+            lines = self.stats_text.count("1.0", "end", "displaylines")
+            n = lines[0] if isinstance(lines, tuple) else lines
+            self.stats_text.config(height=max(3, int(n or 3)))
+        except (tk.TclError, TypeError, ValueError):
+            pass
+        self.stats_text.config(state="disabled")
+
+    def reset(self):
+        self.records = None
+        self.stats = None
+        self.search_var.set("")
+        self.issue_search_var.set("")
+        self.preview_sort_field = None
+        self.preview_sort_reverse = False
+        self.issue_sort_field = None
+        self.issue_sort_reverse = False
+        self._update_preview_arrows()
+        self._update_issue_arrows()
+        self.clear_preview()
+        self.clear_issues()
+        self.set_stats_placeholder()
+        self.app._sync_export_button()
+
+    def clear_preview(self):
+        for item in self.preview_tree.get_children():
+            self.preview_tree.delete(item)
+        self.preview_note_var.set('Chưa có dữ liệu. Hãy bấm "Trích xuất & Xem trước".')
+        self.notebook.tab(0, text="Xem trước (0)")
+
+    def clear_issues(self):
+        for item in self.issues_tree.get_children():
+            self.issues_tree.delete(item)
+        self.issues_note_var.set(
+            "Chưa có dữ liệu. Các dòng bị loại (thiếu email, sai định dạng, trùng email) sẽ hiện ở đây."
+        )
+        self.notebook.tab(1, text="Cần kiểm tra (0)")
+
+    # ------------------------------------------------------------------
+    def load_results(self, records, stats):
+        self.records = records
+        self.stats = stats
+        self.refresh_preview()
+        self.refresh_issues()
+        self.app._sync_export_button()
+
+    # ------------------------------------------------------------------
+    def _update_preview_arrows(self):
+        pass  # (giu don gian - khong ve lai tieu de moi lan, tranh phuc tap khong can thiet)
+
+    def _sort_preview(self, col):
+        field = self.preview_sortable.get(col)
+        if not field:
+            return
+        if self.preview_sort_field == field:
+            self.preview_sort_reverse = not self.preview_sort_reverse
+        else:
+            self.preview_sort_field = field
+            self.preview_sort_reverse = False
+        self.refresh_preview()
+
+    def _sort_issue(self, col):
+        field = self.issue_sortable.get(col)
+        if not field:
+            return
+        if self.issue_sort_field == field:
+            self.issue_sort_reverse = not self.issue_sort_reverse
+        else:
+            self.issue_sort_field = field
+            self.issue_sort_reverse = False
+        self.refresh_issues()
+
+    def _update_issue_arrows(self):
+        pass  # (giu don gian - khong ve lai tieu de moi lan, tranh phuc tap khong can thiet)
+
+    # ------------------------------------------------------------------
+    def refresh_preview(self):
+        if self.records is None:
+            return
+        records = self.records
+        query = self.search_var.get().strip()
+        if query:
+            q = _search_key(query)
+            records = [r for r in records if any(q in _search_key(v) for v in self.row_to_values(r))]
+        if self.preview_sort_field:
+            key = self.preview_sort_field
+            records = sorted(records, key=lambda r: _search_key(r.get(key, "")),
+                              reverse=self.preview_sort_reverse)
+        self._render_preview(records, total_all=len(self.records), query=query)
+        self.notebook.tab(0, text=f"Xem trước ({_fmt(len(self.records))})")
+
+    def _render_preview(self, records, total_all, query):
+        for item in self.preview_tree.get_children():
+            self.preview_tree.delete(item)
+        shown = records[:PREVIEW_LIMIT]
+        for i, rec in enumerate(shown):
+            tag = "even" if i % 2 == 0 else "odd"
+            self.preview_tree.insert("", tk.END, values=self.row_to_values(rec), tags=(tag,))
+
+        total_filtered = len(records)
+        if total_all == 0:
+            self.preview_note_var.set("Không có dữ liệu hợp lệ để hiển thị.")
+        elif query:
+            if total_filtered == 0:
+                self.preview_note_var.set(f'Không tìm thấy dòng nào khớp với "{query}" (trên {_fmt(total_all)} dòng).')
+            else:
+                self.preview_note_var.set(
+                    f'Đang hiển thị {min(total_filtered, PREVIEW_LIMIT)}/{_fmt(total_filtered)} dòng khớp với '
+                    f'"{query}" (trên tổng {_fmt(total_all)} dòng).'
+                )
+        elif total_filtered > PREVIEW_LIMIT:
+            self.preview_note_var.set(f"Đang hiển thị {PREVIEW_LIMIT}/{_fmt(total_filtered)} dòng đầu tiên.")
+        else:
+            self.preview_note_var.set(f"Đang hiển thị toàn bộ {_fmt(total_filtered)} dòng.")
+
+    # ------------------------------------------------------------------
+    def refresh_issues(self):
+        if self.stats is None:
+            return
+        issues = self.stats.get("issues", [])
+        query = self.issue_search_var.get().strip()
+        filtered = issues
+        if query:
+            q = _search_key(query)
+
+            def matches(issue):
+                reason_label = core.ISSUE_REASON_LABELS.get(issue.get("reason"), issue.get("reason", ""))
+                vals = list(self.issue_row_to_values(issue))
+                vals.append(reason_label)
+                return any(q in _search_key(v) for v in vals)
+
+            filtered = [i for i in issues if matches(i)]
+
+        if self.issue_sort_field:
+            key = self.issue_sort_field
+            filtered = sorted(filtered, key=lambda i: _search_key(str(i.get(key, ""))),
+                               reverse=self.issue_sort_reverse)
+
+        self._render_issues(filtered, total_all=len(issues), query=query)
+        self.notebook.tab(1, text=f"Cần kiểm tra ({_fmt(len(issues))})")
+
+    def _render_issues(self, issues, total_all, query):
+        for item in self.issues_tree.get_children():
+            self.issues_tree.delete(item)
+        reason_tag = {"missing_email": "reason_missing", "invalid_email_format": "reason_invalid",
+                      "duplicate_email": "reason_duplicate"}
+        shown = issues[:PREVIEW_LIMIT]
+        for issue in shown:
+            reason_label = core.ISSUE_REASON_LABELS.get(issue.get("reason"), issue.get("reason", ""))
+            values = list(self.issue_row_to_values(issue)) + [reason_label]
+            self.issues_tree.insert("", tk.END, values=values, tags=(reason_tag.get(issue.get("reason"), ""),))
+
+        total_filtered = len(issues)
+        if total_all == 0:
+            self.issues_note_var.set("Không có dòng nào cần kiểm tra - toàn bộ dữ liệu đều hợp lệ.")
+        elif query:
+            if total_filtered == 0:
+                self.issues_note_var.set(f'Không tìm thấy dòng nào khớp với "{query}" (trên {_fmt(total_all)} dòng).')
+            else:
+                self.issues_note_var.set(
+                    f'Đang hiển thị {min(total_filtered, PREVIEW_LIMIT)}/{_fmt(total_filtered)} dòng khớp với '
+                    f'"{query}" (trên tổng {_fmt(total_all)} dòng cần kiểm tra).'
+                )
+        elif total_filtered > PREVIEW_LIMIT:
+            self.issues_note_var.set(f"Đang hiển thị {PREVIEW_LIMIT}/{_fmt(total_filtered)} dòng đầu tiên cần kiểm tra.")
+        else:
+            self.issues_note_var.set(f"Có {_fmt(total_filtered)} dòng cần kiểm tra.")
+
+
+class ContactExtractorGUI(tk.Tk):
+    def __init__(self):
+        super().__init__()
+        self.title("Tạo danh sách tài khoản \u2192 Excel")
+        self.geometry("1240x800")
+        self.minsize(1060, 660)
+        self.configure(bg=COLOR_BG)
+
+        self.mode_var = tk.StringVar(value="mode1")
+        self._ui_ready = False  # tranh <<NotebookTabChanged>> kich hoat qua som luc dang dung giao dien
+
+        # Che do 1: 1 tep moi lan
+        self.mode1_input_path = tk.StringVar()
+        # Che do 2: nhieu tep, moi tep 1 "To chuc mac dinh" rieng (cac tep
+        # trong 1 lo co the thuoc cac tinh khac nhau). Giu thu tu them tep.
+        # Moi phan tu: {path, sheet, to_chuc, emails, skip, reason}. Tep Excel co
+        # >= 2 sheet co email duoc TACH thanh moi sheet 1 dong (moi sheet 1 To
+        # chuc rieng - 1 tep co the chua 2 co quan o 2 tinh khac nhau); sheet
+        # trung >= 50% email voi sheet truoc mac dinh skip=True (khong doc).
+        self.mode2_sources = []
+        self.to_chuc_var = tk.StringVar()
+
+        # BAN THEO NOTION (giu nguyen gam mau kem + coral cua ban dau):
+        # Notion dung MOT ho sans (Notion Sans, dua tren Inter) cho toan bo giao dien, ke ca tieu de
+        # (khong co serif) -> Inter, roi Segoe UI. Tieu de/nut dam, than chu thuong. Code = mono.
+        # Nap font dong goi trong fonts/ (neu co) TRUOC khi tim ho font.
+        _register_private_fonts()
+        self.base_font_family = _pick_font(["Notion Sans", "Inter", "Inter Variable", "Inter 18pt", "Segoe UI",
+                                             "Helvetica Neue", "Helvetica", "Arial"])
+        self.serif_font_family = self.base_font_family  # giu ten thuoc tinh de khong phai sua cho khac
+        self.mono_font_family = _pick_font(["JetBrains Mono", "Cascadia Mono", "Consolas", "Menlo", "Courier New"])
+        print(f"[font] sans={self.base_font_family} | mono={self.mono_font_family}")
+
+        self._setup_style()
+        self._build_widgets()
+        self._setup_shortcuts()
+        self._ui_ready = True
+        self._apply_mode()
+
+    # ------------------------------------------------------------------
+    # STYLE
+    # ------------------------------------------------------------------
+    def _setup_style(self):
+        f = self.base_font_family
+        serif = self.serif_font_family
+        # CHI dat font mac dinh cho widget tk co dien (Label/Text/...). Dung "*Font" se ghi de
+        # CA font cua style ttk (tieu de serif, chu dam cua the...) vi database tuy chon uu tien hon style.
+        for cls in ("Label", "Text", "Listbox", "Entry", "Button", "Menu"):
+            self.option_add(f"*{cls}.Font", (f, 10))
+        style = ttk.Style(self)
+        try:
+            style.theme_use("clam")
+        except tk.TclError:
+            pass
+
+        style.configure(".", background=COLOR_BG, foreground=COLOR_TEXT, font=(f, 10),
+                        bordercolor=COLOR_BORDER, lightcolor=COLOR_BG, darkcolor=COLOR_BG, focuscolor=COLOR_BG)
+        style.configure("TFrame", background=COLOR_BG)
+        style.configure("Card.TFrame", background=COLOR_CARD)
+        style.configure("Header.TFrame", background=COLOR_HEADER_BG)
+        # title-md: sans 500; tieu de trang: display serif 400 (khong dam), khoang cach chu am
+        style.configure("CardTitle.TLabel", background=COLOR_CARD, foreground=COLOR_INK, font=(f, 11, "bold"))
+        style.configure("Card.TLabel", background=COLOR_CARD, foreground=COLOR_TEXT, font=(f, 10))
+        style.configure("Muted.TLabel", background=COLOR_CARD, foreground=COLOR_TEXT_MUTED, font=(f, 9))
+        style.configure("MutedOnBg.TLabel", background=COLOR_BG, foreground=COLOR_TEXT_MUTED, font=(f, 9))
+        style.configure("AppTitle.TLabel", background=COLOR_HEADER_BG, foreground=COLOR_INK, font=(serif, 24, "bold"))
+        style.configure("AppSubtitle.TLabel", background=COLOR_HEADER_BG, foreground=COLOR_TEXT_MUTED, font=(f, 10))
+        style.configure("Shortcut.TLabel", background=COLOR_HEADER_BG, foreground=COLOR_TEXT_MUTED, font=(f, 9))
+
+        # button-secondary: nen canvas, chu ink, vien hairline
+        # Nut noi khoi: relief "raised" + canh sang (tren-trai) / canh toi (duoi-phai); khi bam
+        # (pressed) doi sang "sunken" va dao canh sang-toi -> cam giac nut lun xuong.
+        style.configure("TButton", font=(f, 10), padding=(14, 8), relief="raised", borderwidth=2,
+                        background=COLOR_BG, foreground=COLOR_INK, bordercolor=COLOR_BORDER,
+                        lightcolor=COLOR_EDGE_LIGHT, darkcolor=COLOR_EDGE_SHADE)
+        style.configure("Secondary.TButton", font=(f, 10), padding=(16, 8), relief="raised", borderwidth=2,
+                        background=COLOR_CARD, foreground=COLOR_INK, bordercolor=COLOR_BORDER,
+                        lightcolor=COLOR_EDGE_LIGHT, darkcolor=COLOR_EDGE_SHADE)
+        style.map("Secondary.TButton",
+                  background=[("active", COLOR_SURFACE_CARD), ("pressed", COLOR_SURFACE_CARD)],
+                  lightcolor=[("pressed", COLOR_EDGE_SHADE), ("active", COLOR_EDGE_LIGHT)],
+                  darkcolor=[("pressed", COLOR_EDGE_LIGHT), ("active", COLOR_EDGE_SHADE)],
+                  relief=[("pressed", "sunken")],
+                  bordercolor=[("active", COLOR_BORDER)],
+                  foreground=[("disabled", COLOR_TEXT_MUTED)])
+
+        # button-primary: coral, chu trang; nhan (active) dam hon; disabled kem nhat
+        style.configure("Accent.TButton", font=(f, 11, "bold"), padding=(24, 12), relief="raised", borderwidth=3,
+                        background=COLOR_ACCENT, foreground="#ffffff", bordercolor=COLOR_ACCENT_BORDER,
+                        lightcolor=COLOR_ACCENT_LIGHT, darkcolor=COLOR_ACCENT_DARK)
+        style.map("Accent.TButton",
+                  background=[("disabled", COLOR_ACCENT_DISABLED), ("pressed", COLOR_ACCENT_DARK),
+                              ("active", COLOR_ACCENT_DARK)],
+                  bordercolor=[("disabled", COLOR_ACCENT_DISABLED), ("pressed", COLOR_ACCENT_DARK),
+                               ("active", COLOR_ACCENT_DARK)],
+                  lightcolor=[("disabled", COLOR_ACCENT_DISABLED), ("pressed", COLOR_ACCENT_DARK),
+                              ("active", COLOR_ACCENT)],
+                  darkcolor=[("disabled", COLOR_ACCENT_DISABLED), ("pressed", COLOR_ACCENT_LIGHT),
+                             ("active", COLOR_ACCENT_DARK)],
+                  relief=[("pressed", "sunken")],
+                  foreground=[("disabled", COLOR_TEXT_MUTED)])
+
+        # Xuat tep: be mat toi (button-secondary-on-dark) - he thong khong dung xanh la
+        style.configure("Export.TButton", font=(f, 11, "bold"), padding=(24, 12), relief="raised", borderwidth=3,
+                        background=COLOR_DARK, foreground=COLOR_ON_DARK, bordercolor=COLOR_DARK_SHADE,
+                        lightcolor=COLOR_DARK_LIGHT, darkcolor=COLOR_DARK_SHADE)
+        style.map("Export.TButton",
+                  background=[("disabled", COLOR_ACCENT_DISABLED), ("pressed", COLOR_DARK_SHADE),
+                              ("active", COLOR_DARK_ELEVATED)],
+                  bordercolor=[("disabled", COLOR_ACCENT_DISABLED), ("active", COLOR_DARK_SHADE)],
+                  lightcolor=[("disabled", COLOR_ACCENT_DISABLED), ("pressed", COLOR_DARK_SHADE),
+                              ("active", COLOR_DARK_LIGHT)],
+                  darkcolor=[("disabled", COLOR_ACCENT_DISABLED), ("pressed", COLOR_DARK_LIGHT),
+                             ("active", COLOR_DARK_SHADE)],
+                  relief=[("pressed", "sunken")],
+                  foreground=[("disabled", COLOR_TEXT_MUTED)])
+
+        # text-input: nen canvas, vien hairline; focus -> vien coral
+        # O nhap LOM xuong: canh toi (tren-trai) + canh sang (duoi-phai) -> doi lap voi nut noi.
+        # Notion: o nhap cao ~44px, vien focus day 2px (o day dung coral thay cho tim).
+        style.configure("TEntry", padding=(12, 11), fieldbackground=COLOR_BG, foreground=COLOR_INK,
+                        bordercolor=COLOR_BORDER, lightcolor=COLOR_EDGE_LIGHT, darkcolor=COLOR_EDGE_SHADE,
+                        insertcolor=COLOR_INK, borderwidth=1)
+        style.map("TEntry", bordercolor=[("focus", COLOR_ACCENT)], lightcolor=[("focus", COLOR_ACCENT)],
+                  darkcolor=[("focus", COLOR_ACCENT)], borderwidth=[("focus", 2)])
+        style.configure("Card.TCheckbutton", background=COLOR_CARD, foreground=COLOR_TEXT, font=(f, 10),
+                        indicatorbackground=COLOR_BG, indicatorforeground=COLOR_INK)
+        style.map("Card.TCheckbutton", background=[("active", COLOR_CARD)],
+                  indicatorbackground=[("selected", COLOR_BG)])
+        style.configure("Card.TRadiobutton", background=COLOR_CARD, foreground=COLOR_TEXT, font=(f, 10, "bold"))
+
+        style.configure("Accent.Horizontal.TProgressbar", troughcolor=COLOR_SURFACE_CARD,
+                        background=COLOR_ACCENT, thickness=6, borderwidth=0, lightcolor=COLOR_ACCENT,
+                        darkcolor=COLOR_ACCENT, bordercolor=COLOR_SURFACE_CARD)
+
+        style.configure("Treeview", background=COLOR_ROW_ODD, fieldbackground=COLOR_ROW_ODD,
+                        foreground=COLOR_TEXT, rowheight=32, font=(f, 10), borderwidth=0)
+        style.configure("Treeview.Heading", background=COLOR_SURFACE_CARD, foreground=COLOR_INK,
+                        font=(f, 10, "bold"), padding=(8, 7), relief="raised", borderwidth=1,
+                        bordercolor=COLOR_BORDER, lightcolor=COLOR_EDGE_LIGHT, darkcolor=COLOR_EDGE_SHADE)
+        style.map("Treeview.Heading", background=[("active", COLOR_SURFACE_CARD)])
+        style.map("Treeview", background=[("selected", COLOR_ACCENT)], foreground=[("selected", "#ffffff")])
+
+        # Notion: tab dang chon DAM (nen toi, chu sang), tab con lai chu muted tren nen canvas.
+        # (Notion dung tab vien thuoc; Tk khong bo goc duoc nen la tab chu nhat.)
+        style.configure("TNotebook", background=COLOR_BG, borderwidth=0, bordercolor=COLOR_BORDER,
+                        tabmargins=(0, 0, 0, 0))
+        style.configure("TNotebook.Tab", background=COLOR_BG, foreground=COLOR_TEXT_MUTED, font=(f, 10),
+                        padding=(20, 10), bordercolor=COLOR_BORDER, lightcolor=COLOR_BG, darkcolor=COLOR_BG)
+        style.map("TNotebook.Tab", background=[("selected", COLOR_DARK), ("active", COLOR_SURFACE_CARD)],
+                  foreground=[("selected", COLOR_ON_DARK)], font=[("selected", (f, 10, "bold"))],
+                  bordercolor=[("selected", COLOR_DARK)],
+                  lightcolor=[("selected", COLOR_DARK)], darkcolor=[("selected", COLOR_DARK)])
+
+        style.configure("Vertical.TScrollbar", background=COLOR_BORDER, troughcolor=COLOR_BG,
+                        arrowsize=12, borderwidth=0, bordercolor=COLOR_BG, arrowcolor=COLOR_TEXT_MUTED)
+        style.configure("Horizontal.TScrollbar", background=COLOR_BORDER, troughcolor=COLOR_BG,
+                        arrowsize=12, borderwidth=0, bordercolor=COLOR_BG, arrowcolor=COLOR_TEXT_MUTED)
+
+    # ------------------------------------------------------------------
+    def _card(self, parent, icon, title, subtitle=None):
+        # Bong do 3 lop lech xuong duoi-phai: vien (1px) -> bong sat (1px) -> bong ngoai (2px).
+        # Cac lop long nhau: lop ngoai cung to mau nhat, khung 'the' nam trong cung.
+        shadow_far = tk.Frame(parent, bg=COLOR_SHADOW_FAR)
+        shadow_far.pack(fill="x", pady=(0, 14))
+        shadow_near = tk.Frame(shadow_far, bg=COLOR_SHADOW_NEAR)
+        shadow_near.pack(fill="both", expand=True, padx=(0, 2), pady=(0, 2))
+        outer = tk.Frame(shadow_near, bg=COLOR_BORDER)
+        outer.pack(fill="both", expand=True, padx=(0, 1), pady=(0, 1))
+        inner = tk.Frame(outer, bg=COLOR_CARD)
+        inner.pack(fill="both", expand=True, padx=1, pady=1)
+        header = ttk.Frame(inner, style="Card.TFrame")
+        header.pack(fill="x", padx=18, pady=(14, 6))
+        ttk.Label(header, text=title, style="CardTitle.TLabel").pack(side="left")  # icon bo: giao dien bien tap
+        if subtitle:
+            ttk.Label(header, text=subtitle, style="Muted.TLabel").pack(side="right")
+        body = ttk.Frame(inner, style="Card.TFrame")
+        body.pack(fill="both", expand=True, padx=18, pady=(4, 16))
+        return body
+
+    # ------------------------------------------------------------------
+    # GIAO DIEN
+    # ------------------------------------------------------------------
+    def _build_widgets(self):
+        # ===== 1 VUNG CUON DUY NHAT CHO TOAN BO TRANG =====
+        # Header, tab chon che do, 2 cot noi dung, nut Xuat tep, Nhat ky -
+        # TAT CA nam trong CUNG 1 Canvas cuon duoc, khong con khu vuc co
+        # dinh rieng o tren/duoi nua - cuon nhu 1 trang web thong thuong.
+        canvas = tk.Canvas(self, bg=COLOR_BG, highlightthickness=0)
+        vscroll = ttk.Scrollbar(self, orient="vertical", command=canvas.yview)
+        canvas.configure(yscrollcommand=vscroll.set)
+        canvas.pack(side="left", fill="both", expand=True)
+        vscroll.pack(side="right", fill="y")
+
+        main = tk.Frame(canvas, bg=COLOR_BG)
+        main_window = canvas.create_window((0, 0), window=main, anchor="nw")
+
+        def _on_main_configure(event):
+            canvas.configure(scrollregion=canvas.bbox("all"))
+
+        def _on_canvas_configure(event):
+            canvas.itemconfig(main_window, width=event.width)
+
+        main.bind("<Configure>", _on_main_configure)
+        canvas.bind("<Configure>", _on_canvas_configure)
+
+        def _on_mousewheel(event):
+            delta = event.delta
+            if delta == 0:
+                return
+            canvas.yview_scroll(int(-1 * (delta / 120)), "units")
+
+        def _on_mousewheel_linux(event):
+            canvas.yview_scroll(-1 if event.num == 4 else 1, "units")
+
+        canvas.bind_all("<MouseWheel>", _on_mousewheel)     # Windows/macOS
+        canvas.bind_all("<Button-4>", _on_mousewheel_linux)  # Linux scroll up
+        canvas.bind_all("<Button-5>", _on_mousewheel_linux)  # Linux scroll down
+
+        # ===== HEADER (nam trong vung cuon) =====
+        header = tk.Frame(main, bg=COLOR_HEADER_BG)
+        header.pack(fill="x")
+        header_inner = ttk.Frame(header, style="Header.TFrame")
+        header_inner.pack(fill="x", padx=24, pady=(22, 16))
+        ttk.Label(header_inner, text="Tạo danh sách tài khoản",
+                  style="AppTitle.TLabel").pack(anchor="w")
+        row = ttk.Frame(header_inner, style="Header.TFrame")
+        row.pack(fill="x", pady=(2, 0))
+        ttk.Label(row, text="Trích xuất và chuẩn hoá Email / Họ tên / SĐT, xuất theo file mẫu Excel",
+                  style="AppSubtitle.TLabel").pack(side="left")
+        ttk.Label(row, text="  \u2022  Ctrl+O thêm tệp \u00b7 Enter trích xuất \u00b7 Ctrl+S xuất tệp",
+                  style="Shortcut.TLabel").pack(side="left")
+
+        # hairline + 2 dai mo dan duoi top-nav -> thanh dieu huong "noi" len tren trang
+        for _edge in (COLOR_BORDER, COLOR_SURFACE_CARD, COLOR_SURFACE_SOFT):
+            tk.Frame(main, bg=_edge, height=1).pack(fill="x")
+
+        # ===== TAB CHON CHE DO (thay cho 2 nut chon truoc day) =====
+        mode_wrap = tk.Frame(main, bg=COLOR_BG)
+        mode_wrap.pack(fill="x", padx=20, pady=(14, 0))
+        self.mode_notebook = ttk.Notebook(mode_wrap)
+        self.mode_notebook.pack(fill="x")
+
+        tab1 = tk.Frame(self.mode_notebook, bg=COLOR_SURFACE_CARD)
+        tab2 = tk.Frame(self.mode_notebook, bg=COLOR_SURFACE_CARD)
+        self.mode_notebook.add(tab1, text="Trích xuất từ tài liệu (PDF/Word/Excel/CSV)")
+        self.mode_notebook.add(tab2, text="Chuẩn hoá danh sách đăng ký (có cột Đơn vị công tác)")
+        for tab, txt in ((tab1, "Công văn/danh sách tự do \u2192 file mẫu cls_template_users.xlsx"),
+                         (tab2, "Bảng Họ tên/Đơn vị/Email/SĐT có sẵn \u2192 file mẫu TemplateV2.xlsx")):
+            tk.Label(tab, text=txt, bg=COLOR_SURFACE_CARD, fg=COLOR_TEXT_MUTED,
+                     font=(self.base_font_family, 9)).pack(anchor="w", padx=16, pady=10)
+        self.mode_notebook.bind("<<NotebookTabChanged>>", self._on_mode_tab_changed)
+
+        # ===== 2 COT =====
+        content = tk.Frame(main, bg=COLOR_BG)
+        content.pack(fill="both", expand=True, padx=20, pady=16)
+
+        left_col = tk.Frame(content, bg=COLOR_BG, width=380)
+        left_col.pack(side="left", fill="y", padx=(0, 8))
+        left_col.pack_propagate(False)
+        # pack_propagate(False) giu co dinh chieu RONG, nhung cung lam chieu
+        # cao khong con tinh theo noi dung -> cot trai chi cao bang cot phai,
+        # phan duoi (Mat khau, nut Trich xuat) bi che khi the chon tep Che do
+        # 2 cao len (danh sach tep + o To chuc). Dat chieu cao theo noi dung.
+        left_inner = tk.Frame(left_col, bg=COLOR_BG)
+        left_inner.pack(fill="x")
+        self._left_col, self._left_inner = left_col, left_inner
+        left_inner.bind("<Configure>", lambda e: self._sync_left_height())
+
+        right_col = tk.Frame(content, bg=COLOR_BG)
+        right_col.pack(side="left", fill="both", expand=True, padx=(8, 0))
+
+        self._build_left_column(left_inner)
+        self._build_right_column(right_col)
+
+        # ===== NUT XUAT TEP (dung chung cho ca 2 che do, nam trong vung
+        # cuon nhu phan con lai - khong con co dinh rieng nua) =====
+        export_wrap = tk.Frame(main, bg=COLOR_BG)
+        export_wrap.pack(fill="x", padx=20, pady=(0, 4))
+        self.shared_export_button = ttk.Button(
+            export_wrap, text="Xuất tệp kết quả...", style="Export.TButton",
+            command=self.export_result, state="disabled",
+        )
+        self.shared_export_button.pack(side="left")
+        ttk.Label(export_wrap, text="Chỉ ghi ra tệp khi bạn bấm nút này và chọn nơi lưu",
+                  style="MutedOnBg.TLabel").pack(side="left", padx=(12, 0))
+
+        # ===== NHAT KY (cung nam trong vung cuon) =====
+        log_wrap = tk.Frame(main, bg=COLOR_BG)
+        log_wrap.pack(fill="x", padx=20, pady=(12, 20))
+        log_body = self._card(log_wrap, "\U0001F5A5", "Nhật ký xử lý")
+        console_wrap = tk.Frame(log_body, bg=COLOR_CONSOLE_BG)
+        console_wrap.pack(fill="both", expand=True)
+        self.log_text = tk.Text(
+            console_wrap, height=6, state="disabled", wrap="word",
+            bg=COLOR_CONSOLE_BG, fg=COLOR_CONSOLE_FG, insertbackground=COLOR_CONSOLE_FG,
+            relief="flat", font=(self.mono_font_family, 9), padx=14, pady=12,
+        )
+        self.log_text.pack(fill="both", expand=True)
+        self.log_text.tag_configure("ok", foreground=COLOR_CONSOLE_OK)
+        self.log_text.tag_configure("err", foreground=COLOR_CONSOLE_ERR)
+        self.log_text.tag_configure("warn", foreground=COLOR_CONSOLE_WARN)
+
+    def _on_mode_tab_changed(self, event=None):
+        if not self._ui_ready:
+            return
+        selected = self.mode_notebook.select()
+        if not selected:
+            return
+        try:
+            idx = self.mode_notebook.index(selected)
+        except tk.TclError:
+            return
+        self.mode_var.set("mode1" if idx == 0 else "mode2")
+        self._apply_mode()
+
+    def _sync_left_height(self):
+        self.update_idletasks()
+        h = self._left_inner.winfo_reqheight()
+        if int(self._left_col.cget("height")) != h:
+            self._left_col.config(height=h)
+
+    def _sync_export_button(self):
+        """Bat/tat nut Xuat tep DUNG CHUNG dua tren panel dang duoc chon co
+        du lieu hay khong. Goi moi khi doi che do hoac sau khi trich xuat."""
+        has_records = bool(self.active_panel.records)
+        self.shared_export_button.config(state="normal" if has_records else "disabled")
+
+    # ------------------------------------------------------------------
+    def _build_left_column(self, parent):
+        # ===== THE 1: CHON TEP NGUON (noi dung doi theo che do) =====
+        self.file_card_body = self._card(parent, "\U0001F4C2", "1. Chọn tệp nguồn")
+
+        # -- noi dung cho CHE DO 1: 1 tep moi lan --
+        self.m1_file_frame = tk.Frame(self.file_card_body, bg=COLOR_CARD)
+        ttk.Label(self.m1_file_frame, text="Tệp nguồn (PDF/Word/Excel/CSV):",
+                  style="Card.TLabel").pack(anchor="w")
+        row_m1 = ttk.Frame(self.m1_file_frame, style="Card.TFrame")
+        row_m1.pack(fill="x", pady=(4, 0))
+        ttk.Entry(row_m1, textvariable=self.mode1_input_path).pack(side="left", fill="x", expand=True)
+        ttk.Button(row_m1, text="...", width=3, style="Secondary.TButton",
+                   command=self.choose_mode1_file).pack(side="left", padx=(6, 0))
+        ttk.Label(self.m1_file_frame, text="Mỗi lần xử lý 1 tệp.",
+                  style="Muted.TLabel", wraplength=320).pack(anchor="w", pady=(8, 0))
+
+        # -- noi dung cho CHE DO 2: nhieu tep, moi tep 1 To chuc mac dinh --
+        self.m2_file_frame = tk.Frame(self.file_card_body, bg=COLOR_CARD)
+        tree_wrap = tk.Frame(self.m2_file_frame, bg=COLOR_BORDER)
+        tree_wrap.pack(fill="both", expand=True)
+        m2_inner = tk.Frame(tree_wrap, bg=COLOR_CARD)
+        m2_inner.pack(fill="both", expand=True, padx=1, pady=1)
+        self.m2_tree = ttk.Treeview(m2_inner, columns=("src", "emails", "to_chuc", "status"), show="headings",
+                                    height=6, selectmode="extended")
+        for col, text, width, anchor in (("src", "Tệp / Sheet", 112, "w"), ("emails", "Email", 58, "center"),
+                                         ("to_chuc", "Tổ chức", 82, "w"), ("status", "Trạng thái", 84, "w")):
+            self.m2_tree.heading(col, text=text)
+            self.m2_tree.column(col, width=width, minwidth=36, anchor=anchor)
+        self.m2_tree.tag_configure("skipped", foreground=COLOR_TEXT_MUTED)
+        _attach_scrollbars(m2_inner, self.m2_tree, horizontal=False)
+        self.m2_tree.bind("<<TreeviewSelect>>", self._on_mode2_select)
+        self.m2_tree.bind("<Double-1>", lambda e: self.after_idle(self.toggle_mode2_sheet))
+        btns_m2 = ttk.Frame(self.m2_file_frame, style="Card.TFrame")
+        btns_m2.pack(fill="x", pady=(8, 0))
+        for i in range(3):
+            btns_m2.grid_columnconfigure(i, weight=1)
+        ttk.Button(btns_m2, text="Thêm", style="Secondary.TButton",
+                   command=self.add_mode2_files).grid(row=0, column=0, sticky="ew", padx=(0, 4))
+        ttk.Button(btns_m2, text="Xoá chọn", style="Secondary.TButton",
+                   command=self.remove_mode2_selected).grid(row=0, column=1, sticky="ew", padx=4)
+        ttk.Button(btns_m2, text="Xoá hết", style="Secondary.TButton",
+                   command=self.clear_mode2_files).grid(row=0, column=2, sticky="ew", padx=(4, 0))
+        ttk.Button(btns_m2, text="Dùng / Bỏ sheet đã chọn (nhấp đúp)", style="Secondary.TButton",
+                   command=self.toggle_mode2_sheet).grid(row=1, column=0, columnspan=3, sticky="ew", pady=(6, 0))
+        self.m2_detail_var = tk.StringVar(value="")
+        ttk.Label(self.m2_file_frame, textvariable=self.m2_detail_var, style="Muted.TLabel",
+                  wraplength=330).pack(anchor="w", pady=(6, 0))
+
+        ttk.Label(self.m2_file_frame, text="Tổ chức mặc định (tỉnh/thành, không tiền tố):",
+                  style="Card.TLabel").pack(anchor="w", pady=(12, 0))
+        row_tc = ttk.Frame(self.m2_file_frame, style="Card.TFrame")
+        row_tc.pack(fill="x", pady=(4, 0))
+        ttk.Entry(row_tc, textvariable=self.to_chuc_var).pack(side="left", fill="x", expand=True)
+        ttk.Button(row_tc, text="Gán", style="Secondary.TButton",
+                   command=self.apply_to_chuc).pack(side="left", padx=(6, 0))
+        ttk.Label(self.m2_file_frame,
+                  text="Tệp/sheet mới thêm lấy giá trị trong ô này. Bấm \"Gán\" để áp dụng cho các dòng "
+                       "đang chọn (không chọn dòng nào = áp dụng cho tất cả). Dùng khi nguồn không tự nêu "
+                       "rõ tỉnh/thành (vd \"Sở Tư pháp\"). Ví dụ: Cần Thơ",
+                  style="Muted.TLabel", wraplength=320).pack(anchor="w", pady=(4, 0))
+        self.m2_count_var = tk.StringVar(value="Chưa chọn tệp nào.")
+        ttk.Label(self.m2_file_frame, textvariable=self.m2_count_var, style="Muted.TLabel").pack(
+            anchor="w", pady=(8, 0))
+
+        # ===== THE 2: FILE MAU + TUY CHON =====
+        body2 = self._card(parent, "\u2699", "2. File mẫu & Tuỳ chọn")
+        ttk.Label(body2, text="File mẫu Excel:", style="Card.TLabel").pack(anchor="w")
+        row_tpl = ttk.Frame(body2, style="Card.TFrame")
+        row_tpl.pack(fill="x", pady=(4, 10))
+        self.template_var = tk.StringVar()
+        ttk.Entry(row_tpl, textvariable=self.template_var).pack(side="left", fill="x", expand=True)
+        ttk.Button(row_tpl, text="...", width=3, style="Secondary.TButton",
+                   command=self.choose_template).pack(side="left", padx=(6, 0))
+
+        # -- Mat khau mac dinh: DUNG CHUNG cho ca 2 che do (truoc day chi
+        # rieng che do 1 - gio ca che do 2 cung dung, vi da them tuy chon
+        # dien Mat khau vao ket qua Che do 2 thay vi luon de trong) --
+        self.password_frame = tk.Frame(body2, bg=COLOR_CARD)
+        ttk.Label(self.password_frame, text="Mật khẩu mặc định:", style="Card.TLabel").pack(anchor="w")
+        self.password_var = tk.StringVar(value=core.DEFAULT_PASSWORD)
+        ttk.Entry(self.password_frame, textvariable=self.password_var).pack(fill="x", pady=(4, 10))
+        self.password_frame.pack(fill="x")
+
+        self.dedupe_var = tk.BooleanVar(value=True)
+        self.dedupe_check = ttk.Checkbutton(body2, text="Tự động loại bỏ bản ghi trùng email",
+                                             variable=self.dedupe_var, style="Card.TCheckbutton")
+        self.dedupe_check.pack(anchor="w")
+
+        # ===== NUT TRICH XUAT =====
+        run_wrap = tk.Frame(parent, bg=COLOR_BG)
+        run_wrap.pack(fill="x", pady=(0, 12))
+        self.run_button = ttk.Button(run_wrap, text="Trích xuất & Xem trước",
+                                      style="Accent.TButton", command=self.start_extract)
+        self.run_button.pack(fill="x")
+        self.progress = ttk.Progressbar(run_wrap, mode="indeterminate", style="Accent.Horizontal.TProgressbar")
+        self.progress.pack(fill="x", pady=(8, 4))
+        self.status_var = tk.StringVar(value="Sẵn sàng.")
+        ttk.Label(run_wrap, textvariable=self.status_var, style="MutedOnBg.TLabel").pack(anchor="w")
+
+    # ------------------------------------------------------------------
+    def _build_right_column(self, parent):
+        self.result_container = tk.Frame(parent, bg=COLOR_BG)
+        self.result_container.pack(fill="both", expand=True)
+
+        def m1_row_to_values(rec):
+            password = self.password_var.get() or core.DEFAULT_PASSWORD
+            return (rec["email"], password, rec["name"], rec["phone"])
+
+        def m1_issue_row_to_values(issue):
+            return (issue.get("source", ""), issue.get("row_number") if issue.get("row_number") is not None else "",
+                    issue.get("raw_email", ""), issue.get("raw_name", ""), issue.get("raw_phone", ""))
+
+        self.panel_m1 = ResultPanel(
+            self, self.result_container, "email",
+            M1_PREVIEW_COLUMNS, M1_PREVIEW_HEADINGS, M1_SORTABLE,
+            M1_ISSUE_COLUMNS, M1_ISSUE_HEADINGS, M1_ISSUE_SORTABLE,
+            m1_row_to_values, m1_issue_row_to_values, None,
+        )
+
+        def m2_row_to_values(rec):
+            password = self.password_var.get() or core.DEFAULT_PASSWORD
+            return (rec["name"], rec["email"], password, rec["phone"], rec["don_vi"], rec["to_chuc"],
+                    rec.get("source", ""))
+
+        def m2_issue_row_to_values(issue):
+            return (issue.get("source", ""), issue.get("stt", ""), issue.get("raw_name", ""), issue.get("raw_email", ""),
+                    issue.get("raw_phone", ""), issue.get("raw_unit", ""), issue.get("note", ""))
+
+        self.panel_m2 = ResultPanel(
+            self, self.result_container, "email",
+            M2_PREVIEW_COLUMNS, M2_PREVIEW_HEADINGS, M2_SORTABLE,
+            M2_ISSUE_COLUMNS, M2_ISSUE_HEADINGS, M2_ISSUE_SORTABLE,
+            m2_row_to_values, m2_issue_row_to_values, None,
+        )
+
+    # ------------------------------------------------------------------
+    # CHUYEN DOI CHE DO
+    # ------------------------------------------------------------------
+    def _apply_mode(self):
+        mode = self.mode_var.get()
+        # An het truoc, roi hien dung phan
+        self.m1_file_frame.pack_forget()
+        self.m2_file_frame.pack_forget()
+        self.panel_m1.pack_forget()
+        self.panel_m2.pack_forget()
+
+        if mode == "mode1":
+            self.m1_file_frame.pack(fill="both", expand=True)
+            self.panel_m1.pack()
+            default_tpl = os.path.join(THIS_DIR, "cls_template_users.xlsx")
+            self.dedupe_check.config(text="Tự động loại bỏ bản ghi trùng email")
+        else:
+            self.m2_file_frame.pack(fill="both", expand=True)
+            self.panel_m2.pack()
+            default_tpl = os.path.join(THIS_DIR, "TemplateV2.xlsx")
+            self.dedupe_check.config(text="Tự động loại bỏ bản ghi trùng email (trong từng tệp)")
+
+        if os.path.exists(default_tpl):
+            self.template_var.set(default_tpl)
+        else:
+            self.template_var.set("")
+
+        self._sync_export_button()
+        self._sync_left_height()
+
+    @property
+    def active_panel(self):
+        return self.panel_m1 if self.mode_var.get() == "mode1" else self.panel_m2
+
+    # ------------------------------------------------------------------
+    # PHIM TAT
+    # ------------------------------------------------------------------
+    def _setup_shortcuts(self):
+        self.bind_all("<Control-o>", lambda e: self.choose_mode1_file() if self.mode_var.get() == "mode1"
+                      else self.add_mode2_files())
+        self.bind_all("<Control-O>", lambda e: self.choose_mode1_file() if self.mode_var.get() == "mode1"
+                      else self.add_mode2_files())
+        self.bind_all("<Return>", self._shortcut_extract)
+        self.bind_all("<Control-s>", self._shortcut_export)
+        self.bind_all("<Control-S>", self._shortcut_export)
+
+    def _shortcut_extract(self, event=None):
+        if str(self.run_button["state"]) != "disabled":
+            self.start_extract()
+
+    def _shortcut_export(self, event=None):
+        if str(self.shared_export_button["state"]) != "disabled":
+            self.export_result()
+
+    # ------------------------------------------------------------------
+    # CHE DO 1: FILE NGUON (1 tep)
+    # ------------------------------------------------------------------
+    def choose_mode1_file(self):
+        path = filedialog.askopenfilename(title="Chọn tệp nguồn", filetypes=MODE1_INPUT_FILETYPES)
+        if path:
+            self.mode1_input_path.set(path)
+
+    # ------------------------------------------------------------------
+    # CHE DO 2: FILE NGUON (nhieu tep, moi tep 1 To chuc mac dinh)
+    # ------------------------------------------------------------------
+    def add_mode2_files(self):
+        paths = filedialog.askopenfilenames(title="Chọn tệp danh sách đăng ký",
+                                            filetypes=MODE2_INPUT_FILETYPES)
+        self.add_mode2_paths(paths)
+
+    def add_mode2_paths(self, paths, to_chuc=None):
+        """Them tep vao danh sach che do 2 (bo qua tep/sheet da co). To chuc
+        mac dinh lay tu tham so, hoac tu o nhap hien tai. Tep Excel co >= 2
+        sheet co email -> moi sheet 1 dong (xem core.list_excel_sheets); sheet
+        trung >= 50% email voi sheet truoc mac dinh bi bo qua (skip=True),
+        nguoi dung bat lai bang "Dùng / Bỏ sheet"."""
+        value = (self.to_chuc_var.get() if to_chuc is None else to_chuc).strip()
+        existing = {(s["path"], s["sheet"]) for s in self.mode2_sources}
+        self.config(cursor="watch")
+        self.update_idletasks()
+        try:
+            for p in paths:
+                try:
+                    sheets = core.list_excel_sheets(p)
+                except Exception:
+                    sheets = []  # tep hong/khong mo duoc: van them 1 dong, loi se bao khi trich xuat
+                if sheets:
+                    rows = [(i["sheet"], i["emails"], i["suggest_skip"], i["overlap_with_previous"])
+                            for i in sheets]
+                else:
+                    rows = [(None, None, False, 0)]
+                # O To chuc trong -> goi y tu ten mien email '<tinh>.gov.vn' pho bien nhat
+                # (chi Excel/Word/CSV, nhanh); nguoi dung van sua duoc. Nhap nham tinh o lo
+                # nhieu tep rat de, khong co goi y/canh bao thi im lang.
+                p_value = value or (v2.suggest_to_chuc(p) or "")
+                for sheet, emails, skip, overlap in rows:
+                    if (p, sheet) in existing:
+                        continue
+                    existing.add((p, sheet))
+                    self.mode2_sources.append({"path": p, "sheet": sheet, "to_chuc": p_value, "emails": emails,
+                                               "skip": skip, "overlap": overlap})
+        finally:
+            self.config(cursor="")
+        self._refresh_mode2_tree()
+
+    def remove_mode2_selected(self):
+        drop = {int(i) for i in self.m2_tree.selection()}
+        self.mode2_sources = [s for i, s in enumerate(self.mode2_sources) if i not in drop]
+        self._refresh_mode2_tree()
+
+    def clear_mode2_files(self):
+        self.mode2_sources = []
+        self._refresh_mode2_tree()
+
+    def apply_to_chuc(self):
+        """Gan o 'To chuc mac dinh' cho cac dong dang chon; khong chon dong nao
+        -> gan cho tat ca (truong hop hay gap: ca lo cung 1 tinh)."""
+        value = self.to_chuc_var.get().strip()
+        selected = self.m2_tree.selection()
+        targets = [self.mode2_sources[int(i)] for i in selected] if selected else self.mode2_sources
+        for s in targets:
+            s["to_chuc"] = value
+        self._refresh_mode2_tree(keep_selection=selected)
+
+    def toggle_mode2_sheet(self):
+        """Doi trang thai Dung/Bo cua cac sheet dang chon (dong khong phai sheet
+        Excel khong doi)."""
+        selected = self.m2_tree.selection()
+        for i in selected:
+            s = self.mode2_sources[int(i)]
+            if s["sheet"] is not None:
+                s["skip"] = not s["skip"]
+        self._refresh_mode2_tree(keep_selection=selected)
+
+    def _on_mode2_select(self, event=None):
+        # Chon 1 dong -> hien To chuc cua dong do trong o nhap de sua nhanh, va
+        # ly do bo qua (neu co) o duoi danh sach.
+        selected = self.m2_tree.selection()
+        if len(selected) == 1:
+            s = self.mode2_sources[int(selected[0])]
+            self.to_chuc_var.set(s["to_chuc"])
+            self.m2_detail_var.set(self._mode2_status_text(s, full=True))
+        else:
+            self.m2_detail_var.set("")
+
+    @staticmethod
+    def _mode2_status_text(s, full=False):
+        """Trang thai ngan (cot) hoac day du (dong chi tiet duoi danh sach)."""
+        if s["sheet"] is None:
+            return "Đọc"
+        if not s["skip"]:
+            return f"Sheet \"{s['sheet'].strip()}\" sẽ được đọc. Nhấp đúp để bỏ qua." if full else "Đọc"
+        if not full:
+            return "Bỏ qua"
+        text = f"Sheet \"{s['sheet'].strip()}\" đang BỎ QUA"
+        if s["overlap"]:
+            text += (f": trùng {s['overlap']}/{s['emails']} email với sheet trước (có thể là bản nháp/phụ lục; "
+                     f"{s['emails'] - s['overlap']} email mới sẽ không được đọc)")
+        return text + ". Nhấp đúp để dùng lại."
+
+    def _refresh_mode2_tree(self, keep_selection=()):
+        self.m2_tree.delete(*self.m2_tree.get_children())
+        for i, s in enumerate(self.mode2_sources):
+            name = os.path.basename(s["path"])
+            if s["sheet"] is not None:
+                name += f" › {s['sheet'].strip()}"
+            self.m2_tree.insert("", tk.END, iid=str(i), tags=("skipped",) if s["skip"] else (),
+                                values=(name, "" if s["emails"] is None else s["emails"],
+                                        s["to_chuc"] or "(trống)", self._mode2_status_text(s)))
+        valid = [i for i in keep_selection if self.m2_tree.exists(i)]
+        if valid:
+            self.m2_tree.selection_set(valid)
+        used = [s for s in self.mode2_sources if not s["skip"]]
+        n_files = len({s["path"] for s in self.mode2_sources})
+        if not self.mode2_sources:
+            text = "Chưa chọn tệp nào."
+        else:
+            text = f"{n_files} tệp, {len(used)}/{len(self.mode2_sources)} nguồn sẽ được đọc."
+        missing = sum(1 for s in used if not s["to_chuc"])
+        if missing:
+            text += f" {missing} nguồn chưa có Tổ chức mặc định."
+        self.m2_count_var.set(text)
+        if not valid:
+            self.m2_detail_var.set("")
+
+    # ------------------------------------------------------------------
+    def choose_template(self):
+        path = filedialog.askopenfilename(title="Chọn file mẫu Excel", filetypes=EXCEL_FILETYPES)
+        if path:
+            self.template_var.set(path)
+
+    # ------------------------------------------------------------------
+    # LOG
+    # ------------------------------------------------------------------
+    def log(self, message):
+        key = _search_key(message)
+        tag = None
+        if key.startswith("canh bao"):
+            tag = "warn"
+        elif "loi" in key or "!!" in message:
+            tag = "err"
+        elif "da ghi" in key or "->" in message or "hoan tat" in key:
+            tag = "ok"
+        self.log_text.config(state="normal")
+        self.log_text.insert(tk.END, message + "\n", tag)
+        self.log_text.see(tk.END)
+        self.log_text.config(state="disabled")
+
+    def clear_log(self):
+        self.log_text.config(state="normal")
+        self.log_text.delete("1.0", tk.END)
+        self.log_text.config(state="disabled")
+
+    # ------------------------------------------------------------------
+    # PIPELINE STATS - CHE DO 1
+    # ------------------------------------------------------------------
+    def _mode1_pipeline_segments(self, stats):
+        return [
+            (f"{_fmt(stats['total_rows'])} dòng đọc được", "neutral"),
+            ("  \u2192  ", "arrow"),
+            (f"-{_fmt(stats['missing_email'])} thiếu email", "warn"),
+            ("  \u2192  ", "arrow"),
+            (f"-{_fmt(stats['invalid_email_format'])} sai định dạng", "warn"),
+            ("  \u2192  ", "arrow"),
+            (f"-{_fmt(stats['duplicates_removed'])} trùng email", "danger"),
+            ("  \u2192  ", "arrow"),
+            (f"{_fmt(stats['final_count'])} dòng kết quả", "final"),
+        ] + self._warning_segments(stats)
+
+    @staticmethod
+    def _warning_segments(stats):
+        """Dong nhac canh bao/khoi phuc STT duoi pipeline. Noi dung chi tiet
+        da duoc in ra Nhat ky (print_warnings). Can hien ro vi '0 loi' khong
+        co nghia la dung - STT nhay so / ca cot trong la dau hieu mat du lieu."""
+        segs = []
+        recovered = stats.get("recovered_stts") or []
+        warnings = stats.get("warnings") or []
+        if recovered:
+            segs.append((f"\nĐã khôi phục {len(recovered)} dòng bị bỏ sót khi đọc PDF "
+                         "(xem Nhật ký xử lý).", "neutral"))
+        if warnings:
+            segs.append((f"\nCó {len(warnings)} cảnh báo cần đối chiếu tệp gốc "
+                         "(STT nhảy số / cột trống / tệp đọc lỗi) - xem Nhật ký xử lý bên dưới.", "warn"))
+        return segs
+
+    def _mode2_pipeline_segments(self, stats):
+        missing_invalid = sum(1 for i in stats["issues"]
+                               if i["reason"] in ("missing_email", "invalid_email_format"))
+        files = stats.get("files") or []
+        prefix = [(f"{len(files)} tệp  ·  ", "neutral")] if len(files) > 1 else []
+        return prefix + [
+            (f"{_fmt(stats['total_read'])} dòng đọc được", "neutral"),
+            ("  \u2192  ", "arrow"),
+            (f"-{_fmt(missing_invalid)} thiếu/sai email", "warn"),
+            ("  \u2192  ", "arrow"),
+            (f"-{_fmt(stats['duplicates_removed'])} trùng email", "danger"),
+            ("  \u2192  ", "arrow"),
+            (f"{_fmt(stats['final_count'])} dòng kết quả", "final"),
+        ] + self._warning_segments(stats)
+
+    # ------------------------------------------------------------------
+    # BUOC 1: TRICH XUAT
+    # ------------------------------------------------------------------
+    def start_extract(self):
+        mode = self.mode_var.get()
+        if mode == "mode1":
+            if not self.mode1_input_path.get().strip():
+                messagebox.showwarning("Thiếu dữ liệu", "Vui lòng chọn tệp nguồn.")
+                return
+        else:
+            if not self.mode2_sources:
+                messagebox.showwarning("Thiếu dữ liệu", "Vui lòng chọn ít nhất 1 tệp danh sách đăng ký.")
+                return
+            if all(s["skip"] for s in self.mode2_sources):
+                messagebox.showwarning("Thiếu dữ liệu", "Tất cả sheet đều đang được bỏ qua. "
+                                       "Hãy bật lại ít nhất 1 sheet (nhấp đúp vào dòng).")
+                return
+
+        self.run_button.config(state="disabled")
+        self.status_var.set("Đang xử lý...")
+        self.progress.start(12)
+        self.clear_log()
+        self.active_panel.reset()
+
+        if mode == "mode1":
+            thread = threading.Thread(
+                target=self._extract_worker_mode1,
+                args=([self.mode1_input_path.get().strip()], self.dedupe_var.get()), daemon=True,
+            )
+        else:
+            items = [(s["path"], s["sheet"], s["to_chuc"]) for s in self.mode2_sources if not s["skip"]]
+            # Ghi ro sheet nao da bo, de nguoi dung chu dong bat lai neu can
+            # (vd 16 nguoi moi trong phu luc dau moi Son La).
+            for s in self.mode2_sources:
+                if s["skip"]:
+                    new = s["emails"] - s["overlap"]
+                    self.log(f"CẢNH BÁO: đã bỏ sheet '{s['sheet'].strip()}' của {os.path.basename(s['path'])}: "
+                             f"trùng {s['overlap']}/{s['emails']} email với sheet trước; {new} email mới trong "
+                             "sheet này không được đọc (nhấp đúp vào dòng sheet để dùng lại).")
+            thread = threading.Thread(
+                target=self._extract_worker_mode2, args=(items, self.dedupe_var.get()), daemon=True,
+            )
+        thread.start()
+
+    def _extract_worker_mode1(self, inputs, dedupe):
+        old_stdout, old_stderr = sys.stdout, sys.stderr
+        sys.stdout = sys.stderr = _StreamToLog(self)
+        try:
+            records, stats = core.extract_all(inputs, dedupe=dedupe, verbose=True)
+            self.after(0, self._on_extract_success_mode1, records, stats)
+        except Exception as e:
+            self.after(0, self._on_extract_error, str(e))
+        finally:
+            sys.stdout, sys.stderr = old_stdout, old_stderr
+
+    def _extract_worker_mode2(self, items, dedupe):
+        old_stdout, old_stderr = sys.stdout, sys.stderr
+        sys.stdout = sys.stderr = _StreamToLog(self)
+        try:
+            records, stats = v2.extract_v2_batch(items, dedupe=dedupe, verbose=True)
+            self.after(0, self._on_extract_success_mode2, records, stats)
+        except Exception as e:
+            self.after(0, self._on_extract_error, str(e))
+        finally:
+            sys.stdout, sys.stderr = old_stdout, old_stderr
+
+    def _on_extract_success_mode1(self, records, stats):
+        self.progress.stop()
+        self.run_button.config(state="normal")
+        self.status_var.set("Hoàn tất trích xuất.")
+        self.panel_m1.set_stats_pipeline(self._mode1_pipeline_segments(stats))
+        self.panel_m1.load_results(records, stats)
+        if not records:
+            messagebox.showinfo("Không có dữ liệu hợp lệ",
+                                 "Không trích xuất được bản ghi nào có email hợp lệ từ tệp đã chọn.\n"
+                                 'Xem tab "Cần kiểm tra" để biết chi tiết từng dòng bị loại.')
+
+    def _on_extract_success_mode2(self, records, stats):
+        self.progress.stop()
+        self.run_button.config(state="normal")
+        self.status_var.set("Hoàn tất trích xuất.")
+        self.panel_m2.set_stats_pipeline(self._mode2_pipeline_segments(stats))
+        self.panel_m2.load_results(records, stats)
+        if stats.get("to_chuc_missing"):
+            self.log(f"CẢNH BÁO: {stats['to_chuc_missing']} dòng không xác định được 'Tổ chức' "
+                     f"(để trống) - kiểm tra lại ô 'Tổ chức mặc định' hoặc dữ liệu nguồn.")
+        if not records:
+            messagebox.showinfo("Không có dữ liệu hợp lệ",
+                                 "Không trích xuất được bản ghi nào có email hợp lệ từ các tệp đã chọn.\n"
+                                 'Xem tab "Cần kiểm tra" để biết chi tiết từng dòng bị loại.')
+
+    def _on_extract_error(self, error_message):
+        self.progress.stop()
+        self.run_button.config(state="normal")
+        self.status_var.set("Có lỗi xảy ra.")
+        messagebox.showerror("Lỗi", f"Đã xảy ra lỗi trong quá trình trích xuất:\n{error_message}")
+
+    # ------------------------------------------------------------------
+    # BUOC 2: XUAT TEP KET QUA
+    # ------------------------------------------------------------------
+    def export_result(self):
+        panel = self.active_panel
+        if not panel.records:
+            messagebox.showwarning("Chưa có dữ liệu", 'Vui lòng bấm "Trích xuất & Xem trước" trước.')
+            return
+
+        template_path = self.template_var.get().strip()
+        if not template_path or not os.path.exists(template_path):
+            messagebox.showwarning("Thiếu file mẫu", "Vui lòng chọn file mẫu Excel hợp lệ.")
+            return
+
+        output_path = filedialog.asksaveasfilename(
+            title="Đặt tên và chọn nơi lưu tệp kết quả", defaultextension=".xlsx",
+            filetypes=EXCEL_FILETYPES, initialfile="ket_qua.xlsx",
+        )
+        if not output_path:
+            return
+
+        self.shared_export_button.config(state="disabled")
+        self.status_var.set("Đang xuất tệp...")
+        self.progress.start(12)
+
+        password = self.password_var.get() or core.DEFAULT_PASSWORD
+        mode = self.mode_var.get()
+        if mode == "mode1":
+            thread = threading.Thread(
+                target=self._export_worker_mode1,
+                args=(panel.records, template_path, output_path, password), daemon=True,
+            )
+        else:
+            thread = threading.Thread(
+                target=self._export_worker_mode2,
+                args=(panel, panel.records, panel.stats.get("issues", []), template_path, output_path, password),
+                daemon=True,
+            )
+        thread.start()
+
+    def _export_worker_mode1(self, records, template_path, output_path, password):
+        try:
+            core.write_output(records, template_path, output_path, password=password)
+            self.after(0, self._on_export_success, len(records), output_path)
+        except Exception as e:
+            self.after(0, self._on_export_error, str(e))
+
+    def _export_worker_mode2(self, panel, records, issues, template_path, output_path, password):
+        try:
+            v2.write_v2_output(records, template_path, output_path, password=password)
+            issues_path = None
+            if issues:
+                base, _ext = os.path.splitext(output_path)
+                issues_path = f"{base}_can_kiem_tra.xlsx"
+                v2.write_v2_issues(issues, issues_path)
+            self.after(0, self._on_export_success, len(records), output_path, issues_path)
+        except Exception as e:
+            self.after(0, self._on_export_error, str(e))
+
+    def _on_export_success(self, count, output_path, issues_path=None):
+        self.progress.stop()
+        self.shared_export_button.config(state="normal")
+        self.status_var.set("Đã xuất tệp thành công.")
+        msg = f"Đã xuất {count} bản ghi ra tệp:\n{output_path}"
+        if issues_path:
+            msg += f"\n\nĐã ghi kèm báo cáo các dòng bị loại:\n{issues_path}"
+        messagebox.showinfo("Hoàn tất", msg)
+
+    def _on_export_error(self, error_message):
+        self.progress.stop()
+        self.shared_export_button.config(state="normal")
+        self.status_var.set("Có lỗi xảy ra.")
+        messagebox.showerror("Lỗi", f"Đã xảy ra lỗi khi xuất tệp:\n{error_message}")
+
+
+class _StreamToLog:
+    def __init__(self, gui):
+        self.gui = gui
+
+    def write(self, text):
+        text = text.rstrip("\n")
+        if text:
+            self.gui.after(0, self.gui.log, text)
+
+    def flush(self):
+        pass
+
+
+def main():
+    app = ContactExtractorGUI()
+    app.mainloop()
+
+
+if __name__ == "__main__":
+    main()
