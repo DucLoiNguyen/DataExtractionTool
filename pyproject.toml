@@ -25,7 +25,7 @@ dataextraction-gui = "dataextraction.gui:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-dataextraction = ["templates/*.xlsx", "web/static/*"]
+dataextraction = ["templates/*.xlsx"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

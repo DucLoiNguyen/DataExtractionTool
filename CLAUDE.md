@@ -20,11 +20,13 @@ src/dataextraction/
   core.py                       # (trước là extract_contacts.py) Logic cốt lõi + Chế độ 1, dùng chung cả 2 chế độ
   mode2.py                      # (trước là process_template_v2.py) Logic Chế độ 2, `from . import core`
   gui.py                        # GUI Tkinter (python -m dataextraction)
-  web/app.py, web/static/       # web app FastAPI + 1 trang HTML (python -m dataextraction.web)
+  web/app.py                    # API FastAPI (python -m dataextraction.web); KHÔNG phục vụ giao diện
   templates/                    # cls_template_users.xlsx (Chế độ 1), TemplateV2.xlsx (Chế độ 2)
-tests/                          # pytest cho web app (python -m pytest)
+frontend/                       # giao diện web: Vite + React + TS + Tailwind (npm run dev), xem docs/web.md
+DESIGN.md                       # nguồn chuẩn giao diện web (màu, chữ, bố cục, chuyển động)
+tests/                          # pytest cho API web (python -m pytest)
 scripts/regression.py           # Bảng hồi quy mục 7 + kiểm tra đơn vị: python scripts/regression.py --detail
-docs/                           # web.md (web app), FIXING.md (ghi chú sửa lỗi cũ)
+docs/                           # web.md (kiến trúc web, API, cấu hình), FIXING.md (ghi chú sửa lỗi cũ)
 legacy/                         # gui_notion.py, guiv2.py: bản giao diện cũ, không còn chạy được sau khi chuyển package
 README.md                       # Hướng dẫn cho người dùng cuối
 test_data/                      # File gốc của người dùng, tên ngắn (TaPhin.pdf...) — KHÔNG commit (.gitignore)
@@ -41,12 +43,15 @@ Phụ thuộc: `pip install -e .` (hoặc `pip install openpyxl python-docx pdfp
 Chạy:
 ```bash
 python3 gui.py                                   # giao diện
-python3 -m dataextraction.web                    # web app, http://127.0.0.1:8000 (cần pip install -e ".[web]")
+python3 -m dataextraction.web                    # API web, http://127.0.0.1:8000 (cần pip install -e ".[web]")
+(cd frontend && npm install && npm run dev)       # giao diện web, http://localhost:5173 (chuyển /api sang backend)
 python3 -m dataextraction.mode2 --input X.xlsx [Y.pdf ...] [--template ...] \
     --output kq.xlsx --to-chuc "Cần Thơ" [--password Copenai@2026] [--no-dedupe]
     # nhieu tep: gop 1 ket qua, dung chung --to-chuc
 python3 -m dataextraction.core ...               # CLI chế độ 1 (xem main())
 ```
+
+**Thoả thuận về web/DevOps (14/10/2026, người dùng chọn)**: web tách **frontend (`frontend/`) và backend (API)**, 1 repo. Người dùng **tự làm thủ công** mọi phần triển khai (Dockerfile, compose, Nginx, CI, Kubernetes...) để luyện DevOps: **đừng thêm các tệp đó** và đừng tự cấu hình triển khai; chỉ giữ code app triển khai được thuận tay (cấu hình qua biến môi trường, `/api/health`, README ghi cách build/chạy). Hiệu năng là yêu cầu quan trọng (xem "Hiệu năng" trong `docs/web.md`). Giao diện web theo `DESIGN.md` (phong cách dịu, độ dày thông tin cao, chuyển động vừa phải, chữ trên nền coral là `--on-accent` chứ không phải trắng).
 
 ## 3. Hai chế độ
 

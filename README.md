@@ -12,17 +12,18 @@ loại dữ liệu đầu vào bạn có.
 │   ├── core.py                  ⚙️  Logic dùng chung + chế độ 1
 │   ├── mode2.py                 ⚙️  Logic riêng cho chế độ 2
 │   ├── gui.py                   🖥️  Mã giao diện Tkinter
-│   ├── web/                     🌐  Web app (FastAPI + 1 trang HTML)
+│   ├── web/                     🌐  API web (FastAPI)
 │   └── templates/               📄  2 file mẫu Excel
-├── tests/                       🧪  Test cho web app (pytest)
+├── frontend/                    🌐  Giao diện web (Vite + React)
+├── DESIGN.md                    🎨  Quy chuẩn thiết kế giao diện web
+├── tests/                       🧪  Test cho API web (pytest)
 ├── scripts/regression.py        🧪  Kiểm tra hồi quy (dành cho người bảo trì)
 ├── docs/                        📖  Tài liệu thêm (web.md...)
 ├── legacy/                      🗄️  Giao diện bản cũ, không còn dùng
 └── pyproject.toml               📦  Khai báo package và thư viện
 ```
 
-Chạy giao diện: `py gui.py` (không cần cài package). Chạy bản web:
-`pip install -e ".[web]"` rồi `python -m dataextraction.web` (xem `docs/web.md`).
+Chạy giao diện: `py gui.py` (không cần cài package). Chạy bản web (backend + frontend, 2 cửa sổ dòng lệnh): xem `docs/web.md`.
 
 ## Cài đặt (chỉ cần làm 1 lần)
 
