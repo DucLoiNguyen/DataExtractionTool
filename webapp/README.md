@@ -27,3 +27,9 @@ Mở http://localhost:8000.
   trong mạng nội bộ hoặc đặt sau lớp xác thực.
 - Tệp `.doc` cần LibreOffice trên máy chủ (Word/pywin32 chỉ có trên Windows).
 - Mỗi lần chỉ xử lý một yêu cầu (khoá toàn cục), vì các hàm đọc tệp dùng chung tài nguyên.
+
+## Kiểm thử
+```bash
+pip install -r requirements-dev.txt
+pytest -q
+```
