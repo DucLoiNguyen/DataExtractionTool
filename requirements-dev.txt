@@ -1,4 +1,0 @@
--r webapp/requirements.txt
-pytest
-httpx
-ruff

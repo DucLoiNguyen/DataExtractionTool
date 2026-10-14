@@ -7,23 +7,30 @@ loại dữ liệu đầu vào bạn có.
 
 ```
 📁 (thư mục này)
-├── gui.py                       🖥️  CHẠY FILE NÀY — giao diện duy nhất
-├── extract_contacts.py          ⚙️  Logic dùng chung + chế độ 1
-├── process_template_v2.py       ⚙️  Logic riêng cho chế độ 2
-├── cls_template_users.xlsx      📄  File mẫu cho chế độ 1
-├── TemplateV2.xlsx              📄  File mẫu cho chế độ 2
-├── regression.py                🧪  Kiểm tra hồi quy (dành cho người bảo trì)
-└── README.md                    📖  File này
+├── gui.py                       🖥️  CHẠY FILE NÀY — giao diện Tkinter
+├── src/dataextraction/
+│   ├── core.py                  ⚙️  Logic dùng chung + chế độ 1
+│   ├── mode2.py                 ⚙️  Logic riêng cho chế độ 2
+│   ├── gui.py                   🖥️  Mã giao diện Tkinter
+│   ├── web/                     🌐  Web app (FastAPI + 1 trang HTML)
+│   └── templates/               📄  2 file mẫu Excel
+├── tests/                       🧪  Test cho web app (pytest)
+├── scripts/regression.py        🧪  Kiểm tra hồi quy (dành cho người bảo trì)
+├── docs/                        📖  Tài liệu thêm (web.md...)
+├── legacy/                      🗄️  Giao diện bản cũ, không còn dùng
+└── pyproject.toml               📦  Khai báo package và thư viện
 ```
 
-**Quan trọng**: `gui.py`, 2 file logic và 2 file mẫu phải luôn nằm **cùng 1
-thư mục**. Chỉ cần chạy `gui.py`.
+Chạy giao diện: `py gui.py` (không cần cài package). Chạy bản web:
+`pip install -e ".[web]"` rồi `python -m dataextraction.web` (xem `docs/web.md`).
 
 ## Cài đặt (chỉ cần làm 1 lần)
 
 ```bash
-pip install openpyxl python-docx pdfplumber xlrd
+pip install -e .
 ```
+
+(hoặc, nếu chỉ chạy `gui.py`: `pip install openpyxl python-docx pdfplumber xlrd`)
 
 Để đọc tệp Word cũ `.doc` (Word 97-2003), tool nhờ **Microsoft Word** trên máy
 tự chuyển sang `.docx`; cần cài thêm:
@@ -170,7 +177,7 @@ Có thể tìm kiếm (không phân biệt dấu) và bấm tiêu đề cột đ
 
 ```bash
 # Chế độ 1
-py extract_contacts.py --input a.pdf b.xlsx --template cls_template_users.xlsx --output kq.xlsx
+py -m dataextraction.core --input a.pdf b.xlsx --output kq.xlsx   # --template mặc định là file mẫu đi kèm
 
 # Chế độ 2 (1 hoặc nhiều tệp, gộp vào 1 tệp kết quả)
 py process_template_v2.py --input X.xlsx Y.pdf --template TemplateV2.xlsx \

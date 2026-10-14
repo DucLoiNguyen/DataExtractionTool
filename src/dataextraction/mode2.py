@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-process_template_v2.py
+mode2.py (Che do 2)
 =======================
 Chuyen doi du lieu dang ky (STT | Ho va ten | Don vi cong tac | Email | SDT)
 sang dinh dang template loai 2 (Ten tai khoan | Email | So dien thoai |
@@ -9,10 +9,9 @@ Mat khau | Gioi tinh | Ngay sinh | Don vi | To chuc).
 
 File mau loai 2 la PHAN MO RONG cua file mau loai 1 (them cac truong Ngay
 sinh, Gioi tinh, Don vi, To chuc), nen script nay AP DUNG DAY DU 3 QUY TAC
-GOC cua file mau 1 (tai su dung truc tiep tu extract_contacts.py - can nam
-CUNG THU MUC voi file nay), CONG THEM 2 QUY TAC RIENG cho Don vi/To chuc:
+GOC cua file mau 1 (tai su dung truc tiep tu core.py, cung package), CONG THEM 2 QUY TAC RIENG cho Don vi/To chuc:
 
-0) 3 QUY TAC GOC (tu file mau 1, xem chi tiet trong extract_contacts.py):
+0) 3 QUY TAC GOC (tu file mau 1, xem chi tiet trong core.py):
    - Email: chuan ve dinh dang hop le, viet thuong. Khong co email hop le
      (thieu hoac sai dinh dang) -> BO QUA ban ghi, KHONG ghi vao ket qua.
    - So dien thoai: chuan ve dang so VN (10 so, bat dau bang 0, khong ky tu
@@ -59,7 +58,7 @@ THAY DOI trong tuong lai, nen kiem tra lai neu dung cho du lieu cua thoi
 diem khac.
 
 Cach dung:
-    python3 process_template_v2.py \
+    python3 -m dataextraction.mode2 \
         --input DangKy_2109.xlsx \
         --template TemplateV2.xlsx \
         --output ket_qua_v2.xlsx \
@@ -82,11 +81,10 @@ import unicodedata
 import openpyxl
 from openpyxl.styles import Font
 
-# extract_contacts.py (tool file mau loai 1) can nam CUNG THU MUC voi file
+# core.py (tool file mau loai 1) la module cung package; mode2 dung lai toan bo
 # nay - tai su dung nguyen ven 3 quy tac chuan hoa da kiem chung cua no
 # (email, so dien thoai, ho ten) vi file mau 2 la PHAN MO RONG cua file 1.
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import extract_contacts as core  # noqa: E402
+from . import TEMPLATE_MODE2, core
 
 # ---------------------------------------------------------------------------
 # 1. BANG THAM CHIEU SAP NHAP TINH/THANH 2025 (hieu luc 12/6/2025)
@@ -1831,7 +1829,7 @@ def dedupe_records(records, issues):
 def extract_v2(input_path, default_to_chuc=None, dedupe=True, verbose=True, sheet=None):
     """
     Doc tep dang ky nguon VA AP DUNG DAY DU 3 QUY TAC CUA FILE MAU LOAI 1
-    (tai su dung truc tiep tu extract_contacts.py) CONG 2 QUY TAC RIENG
+    (tai su dung truc tiep tu core.py) CONG 2 QUY TAC RIENG
     (Don vi, To chuc). KHONG GHI RA FILE (dung cho buoc xem truoc truoc khi
     xuat) - xem write_v2_output() de ghi ket qua, write_v2_issues() de ghi
     bao cao cac dong bi loai.
@@ -2241,7 +2239,7 @@ def main():
     parser.add_argument("--input", required=True, nargs="+",
                          help="Một hoặc nhiều tệp nguồn (Excel/PDF/Word/CSV); nhiều tệp được gộp vào 1 tệp kết quả, "
                               "dùng chung --to-chuc, lọc trùng email trong từng tệp")
-    parser.add_argument("--template", required=True, help="Tệp Excel mẫu (template loại 2)")
+    parser.add_argument("--template", default=TEMPLATE_MODE2, help="Tệp Excel mẫu loại 2 (mặc định: tệp mẫu đi kèm)")
     parser.add_argument("--output", required=True, help="Đường dẫn tệp Excel kết quả")
     parser.add_argument("--to-chuc", default=None,
                          help="Tên tỉnh/thành (không tiền tố) dùng mặc định cho 'Tổ chức' khi "

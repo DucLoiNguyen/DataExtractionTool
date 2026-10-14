@@ -1,16 +1,16 @@
 """Web app cho cong cu tao danh sach tai khoan (FastAPI).
 
 Chi la lop vo mong: toan bo logic trich xuat/chuan hoa dung lai nguyen ven
-extract_contacts.py (che do 1) va process_template_v2.py (che do 2), nen sua
+core.py (che do 1) va mode2.py (che do 2), nen sua
 quy tac o do la tu dong ap dung cho ca GUI Tkinter lan web.
 
-Chay:  uvicorn webapp.app:app --reload     (tu thu muc goc cua repo)
+Chay:  uvicorn dataextraction.web.app:app --reload   (sau pip install -e ".[web]")
+   hoac: python -m dataextraction.web
 """
 import json
 import os
 import re
 import shutil
-import sys
 import tempfile
 import threading
 import time
@@ -20,14 +20,9 @@ from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, ROOT)
+from .. import TEMPLATE_MODE1, TEMPLATE_MODE2, core
+from .. import mode2 as v2
 
-import extract_contacts as core  # noqa: E402
-import process_template_v2 as v2  # noqa: E402
-
-TEMPLATE_V1 = os.path.join(ROOT, "cls_template_users.xlsx")
-TEMPLATE_V2 = os.path.join(ROOT, "TemplateV2.xlsx")
 STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
 
 JOB_TTL_SECONDS = 3600
@@ -187,7 +182,7 @@ async def extract(
             if mode == "mode1":
                 records, stats = core.extract_all(paths, dedupe=dedupe, verbose=False)
                 out_path = os.path.join(job_dir, "ket_qua.xlsx")
-                core.write_output(records, TEMPLATE_V1, out_path, password=password)
+                core.write_output(records, TEMPLATE_MODE1, out_path, password=password)
                 issues_path = None
                 rows = [{"name": r["name"], "email": r["email"], "phone": r["phone"],
                          "unit": "", "to_chuc": ""} for r in records]
@@ -210,7 +205,7 @@ async def extract(
                     items.append((paths[idx], s.get("sheet") or None, (s.get("to_chuc") or "").strip()))
                 records, stats = v2.extract_v2_batch(items, dedupe=dedupe, verbose=False)
                 out_path = os.path.join(job_dir, "ket_qua.xlsx")
-                v2.write_v2_output(records, TEMPLATE_V2, out_path, password=password)
+                v2.write_v2_output(records, TEMPLATE_MODE2, out_path, password=password)
                 issues_path = None
                 if stats["issues"]:
                     issues_path = os.path.join(job_dir, "ket_qua_can_kiem_tra.xlsx")

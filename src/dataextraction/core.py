@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-extract_contacts.py
+core.py
 ====================
 Trich xuat du lieu Email / Ho va ten / So dien thoai tu cac file nguon
 (PDF, Word .docx, Excel .xlsx/.xls, CSV) va xuat ket qua ra file Excel
@@ -30,7 +30,7 @@ THONG KE (tra ve tu ham extract_all() / run()):
   - final_count         : so dong con lai sau khi loc trung (= total_extracted - duplicates_removed)
 
 CACH DUNG (dong lenh):
-  python3 extract_contacts.py \
+  python3 -m dataextraction.core \
       --input file1.pdf file2.docx file3.xlsx \
       --template cls_template_users.xlsx \
       --output ket_qua.xlsx
@@ -54,6 +54,8 @@ from copy import copy
 
 import openpyxl
 from openpyxl.utils import get_column_letter
+
+from . import TEMPLATE_MODE1
 
 # ---------------------------------------------------------------------------
 # 1. REGEX / TU KHOA NHAN DIEN
@@ -1965,7 +1967,7 @@ def _recover_missing_stt_rows(records, seen_stts, full_text, row_stats, source_l
     """Che do 1 - LUOI AN TOAN khi pdfplumber BO SOT HOAN TOAN 1 dong khi
     tach bang (Ta Phin mat STT 23/40/55/79 - dong khong xuat hien trong
     bang tach duoc chut nao). Cung co che voi Che do 2
-    (process_template_v2._recover_missing_stt_rows): do STT bi nhay so, tim
+    (mode2._recover_missing_stt_rows): do STT bi nhay so, tim
     lai dong bat dau bang STT do trong van ban tho cua PDF.
 
       - Tim thay dong -> xu ly nhu 1 dong du lieu binh thuong
@@ -2583,7 +2585,7 @@ def main():
         description="Trich xuat Email/Ho ten/SDT tu PDF/Word/Excel va xuat theo template Excel."
     )
     parser.add_argument("--input", nargs="+", required=True, help="Cac file nguon (PDF/DOCX/XLSX/XLS/CSV)")
-    parser.add_argument("--template", required=True, help="File Excel template")
+    parser.add_argument("--template", default=TEMPLATE_MODE1, help="File Excel template (mac dinh: file mau che do 1 di kem)")
     parser.add_argument("--output", required=True, help="Duong dan file Excel ket qua")
     parser.add_argument("--no-dedupe", action="store_true", help="Khong loai bo ban ghi trung email")
     parser.add_argument(

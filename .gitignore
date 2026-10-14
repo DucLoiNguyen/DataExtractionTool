@@ -1,4 +1,10 @@
 __pycache__/
 *.pyc
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+build/
+dist/
+.venv/
 # Du lieu that cua nguoi dung (chua thong tin ca nhan) - khong commit
 test_data/

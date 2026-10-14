@@ -1,13 +1,13 @@
 # Phiên bản web
 
-Giao diện web cho cùng bộ máy trích xuất của `gui.py`. `webapp/app.py` (FastAPI) chỉ nhận tệp tải lên rồi gọi thẳng
-`extract_contacts.py` (Chế độ 1) và `process_template_v2.py` (Chế độ 2), nên sửa quy tắc ở đó là áp dụng cho cả GUI lẫn web.
+Giao diện web cho cùng bộ máy trích xuất của `gui.py`. `src/dataextraction/web/app.py` (FastAPI) chỉ nhận tệp tải lên rồi gọi thẳng
+`core.py` (Chế độ 1) và `mode2.py` (Chế độ 2), nên sửa quy tắc ở đó là áp dụng cho cả GUI lẫn web.
 
 ## Chạy
 
 ```bash
-pip install -r webapp/requirements.txt
-uvicorn webapp.app:app --host 0.0.0.0 --port 8000     # chạy từ thư mục gốc của repo
+pip install -e ".[web]"
+python -m dataextraction.web            # http://127.0.0.1:8000, thêm --port / --host / --reload
 ```
 
 Mở http://localhost:8000.
@@ -30,6 +30,6 @@ Mở http://localhost:8000.
 
 ## Kiểm thử
 ```bash
-pip install -r requirements-dev.txt
+pip install -e ".[dev]"
 pytest -q
 ```

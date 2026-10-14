@@ -7,8 +7,8 @@ Chay bang hoi quy (muc 7 CLAUDE.md) tren cac file goc dat trong test_data/.
 test_data/ KHONG duoc commit (chua du lieu ca nhan) - xem .gitignore.
 
 Cach dung:
-    python regression.py            # chay tat ca, bao OK/SAI tung dong
-    python regression.py --detail   # in them kiem tra dinh tinh
+    python scripts/regression.py   # chay tat ca, bao OK/SAI tung dong
+    python scripts/regression.py --detail   # in them kiem tra dinh tinh
 
 File nao khong co trong test_data/ thi bao "BO QUA" (khong tinh la loi).
 Ten file trong test_data/ la ten ngan (vd TaPhin.pdf) de tranh loi ma hoa
@@ -19,9 +19,10 @@ import os
 import sys
 import warnings
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import extract_contacts as core  # noqa: E402
-import process_template_v2 as v2  # noqa: E402
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.join(ROOT, "src"))  # chay duoc ma khong can pip install
+from dataextraction import core  # noqa: E402
+from dataextraction import mode2 as v2  # noqa: E402
 
 try:
     sys.stdout.reconfigure(encoding="utf-8")
@@ -29,7 +30,7 @@ except Exception:
     pass
 warnings.filterwarnings("ignore")
 
-D = os.path.join(os.path.dirname(os.path.abspath(__file__)), "test_data")
+D = os.path.join(ROOT, "test_data")
 
 # (ten file, doc, kq)
 MODE1 = [

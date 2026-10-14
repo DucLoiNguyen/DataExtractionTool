@@ -4,7 +4,7 @@ import json
 import openpyxl
 from fastapi.testclient import TestClient
 
-from webapp.app import app
+from dataextraction.web.app import app
 
 client = TestClient(app)
 XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"

@@ -13,31 +13,39 @@ Công cụ trích xuất **Họ tên / Email / SĐT** (và **Đơn vị / Tổ c
 ## 2. Cấu trúc thư mục
 
 ```
-gui.py                   # GUI Tkinter duy nhất — người dùng chạy file này
-extract_contacts.py      # Logic cốt lõi + Chế độ 1 (dùng chung cho cả 2 chế độ)
-process_template_v2.py   # Logic Chế độ 2 (import extract_contacts as core)
-cls_template_users.xlsx  # File mẫu Chế độ 1
-TemplateV2.xlsx          # File mẫu Chế độ 2
-README.md                # Hướng dẫn cho người dùng cuối
-regression.py            # Bảng hồi quy mục 7 + kiểm tra đơn vị: python regression.py --detail
-test_data/               # File gốc của người dùng, tên ngắn (TaPhin.pdf...) — KHÔNG commit (.gitignore)
+gui.py                          # launcher: python gui.py (không cần pip install)
+pyproject.toml                  # package "dataextraction" (src layout), extras: web / dev / windows
+src/dataextraction/
+  __init__.py                   # đường dẫn file mẫu: TEMPLATE_MODE1, TEMPLATE_MODE2
+  core.py                       # (trước là extract_contacts.py) Logic cốt lõi + Chế độ 1, dùng chung cả 2 chế độ
+  mode2.py                      # (trước là process_template_v2.py) Logic Chế độ 2, `from . import core`
+  gui.py                        # GUI Tkinter (python -m dataextraction)
+  web/app.py, web/static/       # web app FastAPI + 1 trang HTML (python -m dataextraction.web)
+  templates/                    # cls_template_users.xlsx (Chế độ 1), TemplateV2.xlsx (Chế độ 2)
+tests/                          # pytest cho web app (python -m pytest)
+scripts/regression.py           # Bảng hồi quy mục 7 + kiểm tra đơn vị: python scripts/regression.py --detail
+docs/                           # web.md (web app), FIXING.md (ghi chú sửa lỗi cũ)
+legacy/                         # gui_notion.py, guiv2.py: bản giao diện cũ, không còn chạy được sau khi chuyển package
+README.md                       # Hướng dẫn cho người dùng cuối
+test_data/                      # File gốc của người dùng, tên ngắn (TaPhin.pdf...) — KHÔNG commit (.gitignore)
 ```
 
 Môi trường máy người dùng (Windows): `git` không có trong PATH — dùng `C:\Users\Loind\AppData\Local\GitHubDesktop\app-3.6.6\resources\app\git\cmd\git.exe`. File gốc nằm rải rác trong `~/Downloads` và `~/OneDrive - C-OPENAI/Premier Service Team - Tạo tài khoản GOV_260916/`. **Đã từng mất code do nhiều phiên làm việc ghi đè lên nhau** (phiên sau bắt đầu từ bản cũ): trước khi sửa, xem `git status`/`git log`; sau mỗi thay đổi đã kiểm thử, nhắc người dùng commit.
 
-Cả 5 file đầu phải nằm **cùng một thư mục**. `gui.py` tự tìm file mẫu trong thư mục của nó (`THIS_DIR`).
+Mã nguồn nằm trong package `src/dataextraction`; `python gui.py` và `python scripts/regression.py` tự thêm `src/` vào `sys.path` nên không cần cài. File mẫu lấy qua `dataextraction.TEMPLATE_MODE1/2` (không còn `THIS_DIR`). **Tên module cũ** `extract_contacts`/`process_template_v2` trong các mục dưới đây nay là `dataextraction.core`/`dataextraction.mode2` (alias `core`, `v2` giữ nguyên trong code).
 
-Phụ thuộc: `pip install openpyxl python-docx pdfplumber xlrd`. Trên Windows thêm `pip install pywin32`.
+Phụ thuộc: `pip install -e .` (hoặc `pip install openpyxl python-docx pdfplumber xlrd`). Trên Windows thêm `pip install pywin32`; web app thêm `pip install -e ".[web]"`.
 
 **Chuyển đổi Office cũ** (`core.convert_office_file(path, "docx"|"xlsx")`): `.doc` luôn cần chuyển sang `.docx` (python-docx không đọc `.doc`); `.xls` chỉ chuyển khi `xlrd` thất bại. Thứ tự thử: (1) **Microsoft Word/Excel qua pywin32** (`_convert_via_ms_office`; chỉ Windows; `DispatchEx` mở phiên Word/Excel **riêng, chạy ẩn**; `CoInitialize` vì GUI chạy trong luồng nền; mở `ReadOnly` với mật khẩu giả để tệp có mật khẩu báo lỗi thay vì hiện hộp thoại làm treo; luôn `Close` + `Quit` trong `finally`; Word `FileFormat=16`, Excel `51`); (2) **LibreOffice** (`_convert_via_libreoffice`); (3) lỗi `ValueError` nêu lý do từng cách + hướng dẫn. **Người dùng không cài được LibreOffice**, nên nhánh pywin32 là nhánh chính trên máy họ. Đã chạy với Word thật trên máy người dùng (Office 16, pywin32 312): `P_LongHoa.doc`, `BaoTang.doc`, khoảng 4 giây/tệp, không để lại tiến trình Word/Excel hay thư mục tạm. Nếu gặp lỗi trên Windows, kiểm tra trước: đã cài pywin32 chưa, Word có mở tệp được bằng tay không, tệp có bị Windows chặn (Properties → Unblock) không.
 
 Chạy:
 ```bash
 python3 gui.py                                   # giao diện
-python3 process_template_v2.py --input X.xlsx [Y.pdf ...] --template TemplateV2.xlsx \
+python3 -m dataextraction.web                    # web app, http://127.0.0.1:8000 (cần pip install -e ".[web]")
+python3 -m dataextraction.mode2 --input X.xlsx [Y.pdf ...] [--template ...] \
     --output kq.xlsx --to-chuc "Cần Thơ" [--password Copenai@2026] [--no-dedupe]
     # nhieu tep: gop 1 ket qua, dung chung --to-chuc
-python3 extract_contacts.py ...                  # CLI chế độ 1 (xem main())
+python3 -m dataextraction.core ...               # CLI chế độ 1 (xem main())
 ```
 
 ## 3. Hai chế độ
@@ -49,7 +57,7 @@ python3 extract_contacts.py ...                  # CLI chế độ 1 (xem main()
 | File mẫu | `cls_template_users.xlsx`: Email, Mật khẩu, Họ và tên, Điện thoại | `TemplateV2.xlsx`: Tên tài khoản, Email, Số điện thoại, Mật khẩu, Giới tính, Ngày sinh, Đơn vị, Tổ chức |
 | Cột để trống | — | Giới tính, Ngày sinh (không có trong nguồn → không bịa) |
 
-Chế độ 2 là **phần mở rộng** của chế độ 1: áp dụng đủ quy tắc chuẩn hoá của chế độ 1 (gọi thẳng `core.normalize_email/phone/name`, `core.email_name_match_score`) rồi thêm Đơn vị/Tổ chức. **Sửa quy tắc email/SĐT/tên ở `extract_contacts.py` là tự động áp dụng cho cả 2 chế độ.**
+Chế độ 2 là **phần mở rộng** của chế độ 1: áp dụng đủ quy tắc chuẩn hoá của chế độ 1 (gọi thẳng `core.normalize_email/phone/name`, `core.email_name_match_score`) rồi thêm Đơn vị/Tổ chức. **Sửa quy tắc email/SĐT/tên ở `core.py` là tự động áp dụng cho cả 2 chế độ.**
 
 GUI (`gui.py`): 2 tab chế độ ở đầu trang; toàn bộ trang cuộn được như một khối (header, 2 cột, nút Xuất tệp, Nhật ký đều nằm trong 1 Canvas). Mỗi chế độ có `ResultPanel` riêng với tab **"Xem trước (N)"** và **"Cần kiểm tra (N)"** (tìm kiếm không dấu, sắp xếp theo cột). Chỉ ghi file khi bấm "Xuất tệp kết quả..." (dùng chung `shared_export_button`). Chế độ 2 xuất kèm `<tên>_can_kiem_tra.xlsx` nếu có dòng bị loại.
 
@@ -105,7 +113,7 @@ GUI (`gui.py`): 2 tab chế độ ở đầu trang; toàn bộ trang cuộn đư
 
 Đây là phần quan trọng nhất. Mỗi mục là một lỗi thật đã phát hiện qua file người dùng gửi.
 
-**Nhận diện cột theo từ khoá** (`core.HEADER_KEYWORDS`, `v2.SOURCE_HEADER_KEYWORDS`; so khớp trên chuỗi đã bỏ dấu, viết thường). Từ khoá **email/SĐT** của Chế độ 2 được sinh tự động từ `core.HEADER_KEYWORDS` → chỉ thêm ở `extract_contacts.py`. Từ khoá **tên** giữ riêng: Chế độ 2 không được dùng từ chung `"ten"` (sẽ nhận nhầm "Tên đơn vị"). Các tiêu đề thực tế đã gặp: "mail công vụ", "Địa chỉ thư công vụ", "Thư điện tử công vụ", "Di động", "Số điện thoại sử dụng Zalo", "TT" (thay "STT"), "Tên người dùng", "Phòng ban/Bộ phận". Gặp file mới ra 0 bản ghi hoặc cột trống → kiểm tra tiêu đề cột trước tiên.
+**Nhận diện cột theo từ khoá** (`core.HEADER_KEYWORDS`, `v2.SOURCE_HEADER_KEYWORDS`; so khớp trên chuỗi đã bỏ dấu, viết thường). Từ khoá **email/SĐT** của Chế độ 2 được sinh tự động từ `core.HEADER_KEYWORDS` → chỉ thêm ở `core.py`. Từ khoá **tên** giữ riêng: Chế độ 2 không được dùng từ chung `"ten"` (sẽ nhận nhầm "Tên đơn vị"). Các tiêu đề thực tế đã gặp: "mail công vụ", "Địa chỉ thư công vụ", "Thư điện tử công vụ", "Di động", "Số điện thoại sử dụng Zalo", "TT" (thay "STT"), "Tên người dùng", "Phòng ban/Bộ phận". Gặp file mới ra 0 bản ghi hoặc cột trống → kiểm tra tiêu đề cột trước tiên.
 
 **Cột đơn vị** (`v2._find_source_columns`): quét theo **thứ tự từ khoá** (cụ thể trước: "đơn vị công tác" → "đơn vị" → "phòng ban"...), không theo thứ tự cột (Sơn La có "Tên đơn vị" gần như trống nằm bên trái cột "Cơ quan, đơn vị công tác" đầy đủ). "Chức vụ" chỉ là dự phòng. Hai cột liền kề **cùng tiêu đề** (tiêu đề gộp ô) → ghép giá trị qua `unit2` (Long Hòa: "Phòng VHXH" + "Xã Long Hòa").
 
@@ -150,7 +158,7 @@ GUI (`gui.py`): 2 tab chế độ ở đầu trang; toàn bộ trang cuộn đư
 - Nhận diện ô theo nội dung phải chịu được định dạng lệch: email có khoảng trắng sát `@` (`hamanhcuong3 @laocai.gov.vn`, Yên Thành: 69 người từng bị loại oan; xem `_squeeze_at`), SĐT có dấu chấm/gạch (`0399.517.520`), STT dạng `1.` (bỏ dấu chấm, nếu không cơ chế dò STT nhảy số sẽ không chạy).
 - **Số trang** in ở đầu trang sau có thể bị một số công cụ đọc PDF nối vào SĐT dòng cuối trang trước (vd `0978850300` + trang "3" thành `09788503003`). pdfplumber tách bảng vẫn đúng 10 số. Đừng "sửa" SĐT dựa trên các chuỗi dài bất thường trong văn bản thô mà chưa kiểm tra vị trí ký tự (`page.extract_words()` có `x0/top`).
 
-**STT bị nhảy số — cả 2 chế độ** (hàm dùng chung ở mục "2b. STT" của `extract_contacts.py`: `parse_stt`, `find_stt_gaps`, `find_stt_lines`, `split_recovered_stt_line`)
+**STT bị nhảy số — cả 2 chế độ** (hàm dùng chung ở mục "2b. STT" của `core.py`: `parse_stt`, `find_stt_gaps`, `find_stt_lines`, `split_recovered_stt_line`)
 - **pdfplumber có thể bỏ sót hẳn 1 dòng** khi tách bảng (Tả Phìn mất STT 23, 40, 55, 79). PDF: dò STT nhảy số, tìm lại dòng trong văn bản thô (`page.extract_text()`), tách tên/đơn vị. Chế độ 1: `core._recover_missing_stt_rows`; Chế độ 2: `v2._recover_missing_stt_rows`.
 - **Không tìm thấy dòng trong văn bản thô → chỉ ghi cảnh báo**, không tạo dòng nào (không bịa, không tạo issue "Thiếu email" rỗng). Đồng Tháp: 724, 743, 915, 920, 2315 là **nguồn đánh số sai** (2315 gõ thành 2015).
 - STT "đã thấy" lấy từ **mọi dòng** của bảng, kể cả dòng sẽ bị ghép vào dòng trên và dòng tiêu đề nhóm. Đồng Tháp đánh STT cả cho dòng bị xuống hàng (910 chỉ chứa đuôi email `dongthap.gov.vn` của 909); chỉ lấy STT từ bản ghi sẽ tạo **người ảo**. Sơn La: STT 89 là dòng "Công an tỉnh — chưa có danh sách đăng ký".
@@ -160,7 +168,7 @@ GUI (`gui.py`): 2 tab chế độ ở đầu trang; toàn bộ trang cuộn đư
 
 - `.doc` chuyển sang `.docx` qua `core._convert_via_libreoffice(path, "docx")`, dọn thư mục tạm trong `finally`.
 
-**Chế độ 1** (`extract_contacts.py`): đọc bảng (`extract_from_table_rows`, gộp bảng nhiều trang bằng `merge_multi_page_tables`) + văn bản tự do (`extract_from_free_text`). Word dùng `_full_cell_text`/`_full_paragraph_text` để không sót email nằm trong hyperlink. Mỗi dòng bị loại được ghi vào `stats["issues"]` với `source`, `row_number`, `raw_*`, `reason`.
+**Chế độ 1** (`core.py`): đọc bảng (`extract_from_table_rows`, gộp bảng nhiều trang bằng `merge_multi_page_tables`) + văn bản tự do (`extract_from_free_text`). Word dùng `_full_cell_text`/`_full_paragraph_text` để không sót email nằm trong hyperlink. Mỗi dòng bị loại được ghi vào `stats["issues"]` với `source`, `row_number`, `raw_*`, `reason`.
 - `row_number` = **STT gốc** nếu bảng có cột STT (`is_stt_header`: STT/TT/Số TT); dòng không có STT hiện `"sau STT N"`. Số tự đếm sẽ lệch với tệp gốc (Hồ Quang Lớn STT 742 từng hiện thành 748).
 - **Dòng tiêu đề nhóm** (`_is_group_header_row`, chỉ khi bảng có cột STT và có dòng tiêu đề): STT trống/La Mã, không email/SĐT, và (các ô khác ≤3 ký tự **hoặc** ô tên bắt đầu bằng loại cơ quan — `_GROUP_UNIT_START_RE`) → bỏ qua. Đồng Tháp có 50 dòng như vậy, thường bị cắt sang 2 ô ("Ủy ban nhân dân Phường Lo" | "ng Thuận"). **Không** thêm "Đoàn" (là họ người: "Đoàn Văn Nỉ").
 - **Email/SĐT theo nội dung khi lệch cột** (`_find_email_in_row`, `_find_phone_in_row`): cột Email không hợp lệ → tìm email hợp lệ ở ô khác, hoặc ghép 2 ô liền nhau khi ô sau là đuôi ngắn toàn ký tự email (`hoquanglon@gmail.c` + `om`). SĐT chỉ tìm sang ô khác khi có dấu hiệu lệch cột.
@@ -182,7 +190,7 @@ GUI (`gui.py`): 2 tab chế độ ở đầu trang; toàn bộ trang cuộn đư
 
 ## 7. Bảng hồi quy (số liệu hiện tại, đã xác minh)
 
-Chạy: `python regression.py --detail` (đọc `test_data/` với tên ngắn: SonLinh.pdf, DongThap.pdf, KonDao.pdf, TaPhin.pdf, DaNang.xlsx, LongHoa.xlsx, CanTho.xlsx, VINATOM.xls, NghiaDo.pdf, BenCat.xlsx, BinhHoa.docx, ChanhHung.docx, P_LongHoa.doc, BaoTang.doc, SonLa.xlsx, ChiengKen.pdf, YenThanh.pdf, DakLak.xlsx, GiaLai_SNNMT.pdf, TTYT_TamLong.xlsx, NinhBinh.xlsx, ThaiNguyen.xls, KhuDiTich.docx; file thiếu thì báo "BO QUA"; kèm kiểm tra đơn vị không cần file). Khi thêm file mới: chép vào `test_data/` tên ngắn không dấu, thêm vào `MODE1`/`MODE2` trong `regression.py` và bảng dưới đây. Chưa tìm thấy trên máy (30/09/2026): Support_excel.xlsx (NinhBinh), CV_163 Thái Nguyên, Khu Di tích. Cột "Đọc" = số dòng đọc được, "KQ" = số tài khoản xuất ra, "CKT" = số dòng Cần kiểm tra.
+Chạy: `python scripts/regression.py --detail` (đọc `test_data/` với tên ngắn: SonLinh.pdf, DongThap.pdf, KonDao.pdf, TaPhin.pdf, DaNang.xlsx, LongHoa.xlsx, CanTho.xlsx, VINATOM.xls, NghiaDo.pdf, BenCat.xlsx, BinhHoa.docx, ChanhHung.docx, P_LongHoa.doc, BaoTang.doc, SonLa.xlsx, ChiengKen.pdf, YenThanh.pdf, DakLak.xlsx, GiaLai_SNNMT.pdf, TTYT_TamLong.xlsx, NinhBinh.xlsx, ThaiNguyen.xls, KhuDiTich.docx; file thiếu thì báo "BO QUA"; kèm kiểm tra đơn vị không cần file). Khi thêm file mới: chép vào `test_data/` tên ngắn không dấu, thêm vào `MODE1`/`MODE2` trong `regression.py` và bảng dưới đây. Chưa tìm thấy trên máy (30/09/2026): Support_excel.xlsx (NinhBinh), CV_163 Thái Nguyên, Khu Di tích. Cột "Đọc" = số dòng đọc được, "KQ" = số tài khoản xuất ra, "CKT" = số dòng Cần kiểm tra.
 
 **Chế độ 1** (`core.extract_all([path], dedupe=True)`; Đọc = `stats["total_rows"]`)
 

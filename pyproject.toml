@@ -1,8 +1,40 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dataextraction"
+version = "0.1.0"
+description = "Trich xuat Ho ten / Email / SDT (va Don vi / To chuc) tu cong van, Word, Excel de tao danh sach tai khoan"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = ["openpyxl", "python-docx", "pdfplumber", "xlrd"]
+
+[project.optional-dependencies]
+web = ["fastapi", "uvicorn", "python-multipart"]
+windows = ["pywin32; sys_platform == 'win32'"]  # doc .doc/.xls cu qua Microsoft Office
+dev = ["dataextraction[web]", "pytest", "httpx", "ruff"]
+
+[project.scripts]
+dataextraction-web = "dataextraction.web.__main__:main"
+
+[project.gui-scripts]
+dataextraction-gui = "dataextraction.gui:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+dataextraction = ["templates/*.xlsx", "web/static/*"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["src"]
 
 [tool.ruff]
 line-length = 140
-# Chi lint code moi (webapp, tests); code Tkinter/trich xuat cu chua duoc chuan hoa theo ruff.
-include = ["webapp/**/*.py", "tests/**/*.py"]
-lint.select = ["E", "F", "W"]
+# Chi lint code moi (web, tests); code Tkinter/trich xuat cu chua duoc chuan hoa theo ruff.
+include = ["src/dataextraction/web/**/*.py", "tests/**/*.py", "gui.py"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W"]
