@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tạo danh sách tài khoản</title>
+<style>
+  :root{--bg:#faf9f5;--card:#fff;--border:#e6dfd0;--text:#29261b;--muted:#6f6858;--accent:#cc785c;--accent-d:#b4634a;
+        --dark:#181715;--dark-fg:#e8e2d6;--warn:#9a6a14;--warn-bg:#fbf1dc;--danger:#a8402b;--danger-bg:#f9e9e4}
+  @media (prefers-color-scheme: dark){:root{--bg:#1c1b18;--card:#262420;--border:#3a372f;--text:#ece6d8;--muted:#a39b88;
+        --warn-bg:#3a2f14;--danger-bg:#3b1f18;--dark:#0f0e0d}}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font:15px/1.5 "Segoe UI",system-ui,sans-serif}
+  .wrap{max-width:1180px;margin:0 auto;padding:24px 16px 64px}
+  h1{font:400 30px Georgia,serif;margin:0 0 4px} .sub{color:var(--muted);margin:0 0 20px}
+  .tabs{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap}
+  .tab{border:1px solid var(--border);background:var(--card);color:var(--text);padding:8px 16px;border-radius:8px;cursor:pointer;font:inherit}
+  .tab.on{background:var(--accent);border-color:var(--accent);color:#fff}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:16px}
+  .card h2{font-size:15px;margin:0 0 10px}
+  .drop{border:2px dashed var(--border);border-radius:10px;padding:24px;text-align:center;color:var(--muted);cursor:pointer}
+  .drop.over{border-color:var(--accent);background:rgba(204,120,92,.08)}
+  table{border-collapse:collapse;width:100%} th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--border);vertical-align:top}
+  th{font-weight:600;font-size:13px;color:var(--muted);position:sticky;top:0;background:var(--card);cursor:default}
+  th.sort{cursor:pointer}
+  tr.skip td{color:var(--muted);text-decoration:line-through}
+  input[type=text],input[type=password]{font:inherit;padding:6px 8px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);width:100%}
+  button{font:inherit;cursor:pointer;border-radius:8px;border:1px solid var(--border);background:var(--card);color:var(--text);padding:7px 14px}
+  button.primary{background:var(--accent);border-color:var(--accent);color:#fff} button.primary:hover{background:var(--accent-d)}
+  button.dark{background:var(--dark);color:var(--dark-fg);border-color:var(--dark)}
+  button:disabled{opacity:.5;cursor:not-allowed}
+  .row{display:flex;gap:12px;flex-wrap:wrap;align-items:end} .row>label{flex:1;min-width:200px;font-size:13px;color:var(--muted)}
+  .pipeline{display:flex;gap:8px;flex-wrap:wrap;align-items:center;font-size:15px}
+  .pipeline b.final{font:400 28px Georgia,serif;color:var(--accent)} .pipeline .w{color:var(--warn)} .pipeline .d{color:var(--danger)} .arr{color:var(--muted)}
+  .warn{background:var(--warn-bg);color:var(--warn);border-radius:8px;padding:8px 12px;margin:6px 0;font-size:14px}
+  .err{background:var(--danger-bg);color:var(--danger);border-radius:8px;padding:10px 12px;margin:8px 0;white-space:pre-wrap}
+  .scroll{max-height:480px;overflow:auto;border:1px solid var(--border);border-radius:8px}
+  .subtabs{display:flex;gap:4px;margin:12px 0 8px} .subtabs .tab{padding:6px 12px}
+  .toolbar{display:flex;gap:8px;justify-content:space-between;flex-wrap:wrap;margin-bottom:8px}
+  .toolbar input{max-width:320px}
+  .hint{font-size:13px;color:var(--muted)} .hidden{display:none!important}
+  .spinner{display:inline-block;width:14px;height:14px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:s 1s linear infinite;vertical-align:-2px;margin-right:6px}
+  @keyframes s{to{transform:rotate(360deg)}}
+  td.mono{font-family:"Cascadia Mono",Consolas,monospace;font-size:13px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Tạo danh sách tài khoản</h1>
+  <p class="sub">Nền tảng Trí tuệ nhân tạo hỗ trợ công vụ — trích xuất Họ tên / Email / SĐT từ công văn, Word, Excel, CSV.</p>
+
+  <div class="tabs">
+    <button class="tab on" id="tab1" onclick="setMode('mode1')">Chế độ 1 · Tên, Email, SĐT</button>
+    <button class="tab" id="tab2" onclick="setMode('mode2')">Chế độ 2 · Thêm Đơn vị / Tổ chức</button>
+  </div>
+
+  <div class="card">
+    <h2 id="srcTitle">1. Chọn tệp nguồn</h2>
+    <div class="drop" id="drop">Kéo thả tệp vào đây hoặc bấm để chọn<br><span class="hint" id="dropHint">PDF, Word (.docx/.doc), Excel (.xlsx/.xls), CSV</span></div>
+    <input type="file" id="picker" class="hidden" accept=".pdf,.docx,.doc,.xlsx,.xls,.csv">
+    <div id="srcWrap" style="margin-top:12px" class="hidden">
+      <table><thead><tr><th>Tệp › Sheet</th><th id="thEmails">Email</th><th id="thToChuc">Tổ chức mặc định</th><th></th></tr></thead><tbody id="srcBody"></tbody></table>
+    </div>
+    <div id="m2tools" class="row hidden" style="margin-top:12px">
+      <label>Gán Tổ chức mặc định cho tất cả nguồn
+        <input type="text" id="bulkToChuc" placeholder="vd: Cần Thơ, Lào Cai, Viện Năng lượng nguyên tử Việt Nam"></label>
+      <button onclick="applyBulk()">Gán</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>2. Tuỳ chọn</h2>
+    <div class="row">
+      <label>Mật khẩu mặc định<input type="text" id="password"></label>
+      <label style="flex:0 0 auto;display:flex;gap:6px;align-items:center;color:var(--text)"><input type="checkbox" id="dedupe" checked> Lọc trùng email</label>
+      <button class="primary" id="run" onclick="run()" disabled>Trích xuất</button>
+    </div>
+    <div id="status" class="hint" style="margin-top:8px"></div>
+  </div>
+
+  <div id="result" class="hidden">
+    <div class="card">
+      <div class="pipeline" id="pipeline"></div>
+      <div id="warnings"></div>
+      <div class="row" style="margin-top:12px">
+        <button class="dark" id="dlResult">Tải tệp kết quả (.xlsx)</button>
+        <button id="dlIssues" class="hidden">Tải danh sách cần kiểm tra (.xlsx)</button>
+      </div>
+    </div>
+    <div class="card">
+      <div class="subtabs"><button class="tab on" id="stPrev" onclick="subTab('prev')"></button><button class="tab" id="stIss" onclick="subTab('iss')"></button></div>
+      <div class="toolbar"><input type="text" id="search" placeholder="Tìm kiếm (không cần gõ dấu)…" oninput="render()"><span class="hint" id="count"></span></div>
+      <div class="scroll"><table><thead id="thead"></thead><tbody id="tbody"></tbody></table></div>
+    </div>
+  </div>
+  <div id="error"></div>
+</div>
+
+<script>
+let mode='mode1', files=[], sources=[], data=null, sub='prev', sortKey=null, sortRev=false, token=0;
+const $=id=>document.getElementById(id);
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const fold=s=>String(s??'').normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/đ/g,'d').replace(/Đ/g,'D').toLowerCase();
+const fmt=n=>Number(n).toLocaleString('vi-VN');
+
+fetch('/api/config').then(r=>r.json()).then(c=>$('password').value=c.default_password).catch(()=>{});
+
+function setMode(m){
+  mode=m; files=[]; sources=[]; data=null;
+  $('tab1').classList.toggle('on',m==='mode1'); $('tab2').classList.toggle('on',m==='mode2');
+  $('m2tools').classList.toggle('hidden',m!=='mode2');
+  $('thToChuc').classList.toggle('hidden',m!=='mode2');
+  $('dropHint').textContent=m==='mode1'?'Chế độ 1 xử lý 1 tệp mỗi lần':'Có thể chọn nhiều tệp; tệp Excel nhiều sheet được tách theo sheet';
+  $('picker').multiple=m==='mode2';
+  $('result').classList.add('hidden'); $('error').innerHTML='';
+  renderSources();
+}
+
+const drop=$('drop'), picker=$('picker');
+drop.onclick=()=>picker.click();
+picker.onchange=()=>{addFiles([...picker.files]); picker.value='';};
+['dragover','dragenter'].forEach(e=>drop.addEventListener(e,ev=>{ev.preventDefault();drop.classList.add('over')}));
+['dragleave','drop'].forEach(e=>drop.addEventListener(e,ev=>{ev.preventDefault();drop.classList.remove('over')}));
+drop.addEventListener('drop',ev=>addFiles([...ev.dataTransfer.files]));
+
+async function post(url,file){const fd=new FormData();fd.append('file',file);const r=await fetch(url,{method:'POST',body:fd});return r.ok?r.json():{}}
+
+async function addFiles(list){
+  if(!list.length) return;
+  if(mode==='mode1'){files=[];sources=[];list=[list[0]];}
+  $('status').innerHTML='<span class="spinner"></span>Đang đọc tệp…';
+  for(const f of list){
+    const idx=files.length; files.push(f);
+    if(mode==='mode1'){sources.push({file:idx,sheet:null,label:f.name});continue;}
+    const [sh,sg]=await Promise.all([post('/api/sheets',f),post('/api/suggest-to-chuc',f)]);
+    const to=$('bulkToChuc').value.trim()||sg.suggestion||'';
+    const sheets=sh.sheets||[];
+    if(sheets.length) for(const s of sheets) sources.push({file:idx,sheet:s.sheet,label:`${f.name} › ${s.sheet}`,emails:s.emails,skip:s.suggest_skip,overlap:s.overlap_with_previous,to_chuc:to});
+    else sources.push({file:idx,sheet:null,label:f.name,emails:null,skip:false,to_chuc:to});
+  }
+  $('status').textContent='';
+  renderSources();
+}
+
+function renderSources(){
+  $('srcWrap').classList.toggle('hidden',!sources.length);
+  $('thEmails').classList.toggle('hidden',mode!=='mode2');
+  $('srcBody').innerHTML=sources.map((s,i)=>`<tr class="${s.skip?'skip':''}">
+    <td>${esc(s.label)}</td>
+    ${mode==='mode2'?`<td>${s.emails==null?'—':fmt(s.emails)}${s.skip?` <span class="hint">(bỏ qua: trùng ${s.overlap}/${s.emails} email với sheet trước)</span>`:''}</td>
+    <td><input type="text" value="${esc(s.to_chuc)}" oninput="sources[${i}].to_chuc=this.value" ${s.skip?'disabled':''}></td>`:''}
+    <td style="white-space:nowrap">${mode==='mode2'&&s.sheet!=null?`<button onclick="toggleSkip(${i})">${s.skip?'Dùng sheet':'Bỏ sheet'}</button> `:''}<button onclick="removeSource(${i})">Xoá</button></td></tr>`).join('');
+  $('run').disabled=!sources.some(s=>!s.skip);
+}
+function toggleSkip(i){sources[i].skip=!sources[i].skip;renderSources()}
+function removeSource(i){sources.splice(i,1);renderSources()}
+function applyBulk(){const v=$('bulkToChuc').value.trim();sources.forEach(s=>{if(!s.skip)s.to_chuc=v});renderSources()}
+
+async function run(){
+  const active=sources.filter(s=>!s.skip);
+  const used=[...new Set(active.map(s=>s.file))];
+  const fd=new FormData();
+  fd.append('mode',mode);
+  used.forEach(i=>fd.append('files',files[i]));
+  fd.append('sources',JSON.stringify(active.map(s=>({file:used.indexOf(s.file),sheet:s.sheet,to_chuc:s.to_chuc||''}))));
+  fd.append('dedupe',$('dedupe').checked);
+  fd.append('password',$('password').value);
+  $('run').disabled=true; $('error').innerHTML=''; $('result').classList.add('hidden');
+  $('status').innerHTML='<span class="spinner"></span>Đang trích xuất… (PDF lớn có thể mất vài chục giây)';
+  try{
+    const r=await fetch('/api/extract',{method:'POST',body:fd});
+    const j=await r.json();
+    if(!r.ok) throw new Error(j.detail||'Lỗi không xác định');
+    data=j; show();
+    $('status').textContent='Hoàn tất trích xuất.';
+  }catch(e){
+    $('status').textContent=''; $('error').innerHTML=`<div class="err">${esc(e.message)}</div>`;
+  }finally{ $('run').disabled=!sources.some(s=>!s.skip); }
+}
+
+function show(){
+  const s=data.stats;
+  $('pipeline').innerHTML=`<span>${fmt(s.total_read)} dòng đọc được</span><span class="arr">→</span>
+    <span class="w">−${fmt(s.missing_email)} thiếu email</span><span class="arr">→</span>
+    <span class="w">−${fmt(s.invalid_email)} sai định dạng</span><span class="arr">→</span>
+    <span class="d">−${fmt(s.duplicates)} trùng email</span><span class="arr">→</span>
+    <span><b class="final">${fmt(s.final)}</b> dòng kết quả</span>`;
+  const bad=(data.files||[]).filter(f=>f.error).map(f=>`${f.source}: ${f.error}`);
+  $('warnings').innerHTML=[...bad,...data.warnings].map(w=>`<div class="warn">⚠ ${esc(w)}</div>`).join('');
+  $('dlResult').onclick=()=>location.href=`/api/download/${data.job_id}/result`;
+  $('dlIssues').classList.toggle('hidden',!data.has_issues_file);
+  $('dlIssues').onclick=()=>location.href=`/api/download/${data.job_id}/issues`;
+  $('stPrev').textContent=`Xem trước (${fmt(data.records.length)})`;
+  $('stIss').textContent=`Cần kiểm tra (${fmt(data.issues.length)})`;
+  $('result').classList.remove('hidden');
+  subTab('prev');
+}
+function subTab(t){sub=t;sortKey=null;$('stPrev').classList.toggle('on',t==='prev');$('stIss').classList.toggle('on',t==='iss');$('search').value='';render()}
+function cols(){
+  if(sub==='prev') return mode==='mode1'
+    ?[['name','Họ và tên'],['email','Email'],['phone','Điện thoại']]
+    :[['name','Tên tài khoản'],['email','Email'],['phone','Số điện thoại'],['unit','Đơn vị'],['to_chuc','Tổ chức']];
+  const c=[['stt','STT'],['name','Họ tên (gốc)'],['email','Email (gốc)'],['phone','SĐT (gốc)']];
+  if(mode==='mode2') c.push(['unit','Đơn vị (gốc)']);
+  c.push(['reason','Lý do']);
+  if(data.issues.some(i=>i.note)) c.push(['note','Ghi chú']);
+  if(data.issues.some(i=>i.source)) c.unshift(['source','Tệp nguồn']);
+  return c;
+}
+function sortBy(k){sortRev=sortKey===k?!sortRev:false;sortKey=k;render()}
+function render(){
+  if(!data) return;
+  const c=cols(), q=fold($('search').value.trim());
+  let rows=sub==='prev'?data.records:data.issues;
+  if(q) rows=rows.filter(r=>c.some(([k])=>fold(r[k]).includes(q)));
+  if(sortKey) rows=[...rows].sort((a,b)=>fold(a[sortKey]).localeCompare(fold(b[sortKey]),'vi',{numeric:true})*(sortRev?-1:1));
+  $('thead').innerHTML='<tr>'+c.map(([k,l])=>`<th class="sort" onclick="sortBy('${k}')">${l}${sortKey===k?(sortRev?' ▼':' ▲'):''}</th>`).join('')+'</tr>';
+  const MAX=1000;
+  $('tbody').innerHTML=rows.slice(0,MAX).map(r=>'<tr>'+c.map(([k])=>`<td class="${k==='email'||k==='phone'?'mono':''}">${esc(r[k])}</td>`).join('')+'</tr>').join('');
+  $('count').textContent=rows.length>MAX?`Hiện ${fmt(MAX)}/${fmt(rows.length)} dòng — tải tệp .xlsx để xem đủ`:`${fmt(rows.length)} dòng`;
+}
+setMode('mode1');
+</script>
+</body>
+</html>
