@@ -53,7 +53,7 @@ MODE1 = [
     ("PhuTho_DaiDong.xlsx", 172, 169),
     # --- lo 14 tep Phu Tho ngay 13/10/2026 ---
     ("VinhTuong.docx", 67, 67),    # tieu de nhom gop o ngang (Word)
-    ("TienLu.xlsx", 346, 340),     # "Tru so chinh" khong phai "So"
+    ("TienLu.xlsx", 346, 339),     # "Tru so chinh" khong phai "So"; 18 ten mien go sai duoc sua -> +1 trung email (STT 291)
     ("ThaiHoa.docx", 42, 40),      # tieu de nhom con danh so A-rap
     ("MaiChau.xlsx", 55, 54),      # Excel luu Unicode to hop (NFD)
     ("HoiThinh.pdf", 54, 53),      # xa ten "Hoi Thinh"; -1 email 'p htho.gov.vn'
@@ -66,6 +66,10 @@ MODE1 = [
     ("SoTaiChinh.xlsx", 216, 213),
     ("SoXayDung.pdf", 151, 144),
     ("SoYTe.xlsx", 25, 25),
+    # --- lo 3 tep ngay 14/10/2026 ---
+    ("SoNNMT_HCM.xlsx", 212, 212),  # 9 email @tphcm.gov.com duoc sua ve .gov.vn
+    ("HanhThong.docx", 71, 71),
+    ("PhongHai.pdf", 134, 134),     # 1 email @laocai.goc.vn duoc sua ve .gov.vn
     ("SonLa.xlsx", 5981, 5026),    # sheet 2 (phu luc dau moi) bi bo; -10 email cat giua tu; -17 "sonla gov.vn"
 ]
 
@@ -106,7 +110,7 @@ MODE2 = [
     ("PhuTho_NguyetDuc.pdf", "Phú Thọ", 54, 53, 1),
     ("PhuTho_DaiDong.xlsx", "Phú Thọ", 172, 169, 3),
     ("VinhTuong.docx", "Phú Thọ", 67, 67, 0),
-    ("TienLu.xlsx", "Phú Thọ", 346, 340, 6),
+    ("TienLu.xlsx", "Phú Thọ", 346, 339, 7),
     ("ThaiHoa.docx", "Phú Thọ", 42, 40, 2),
     ("MaiChau.xlsx", "Phú Thọ", 55, 54, 1),
     ("HoiThinh.pdf", "Phú Thọ", 54, 53, 1),
@@ -119,6 +123,9 @@ MODE2 = [
     ("SoTaiChinh.xlsx", "Phú Thọ", 216, 213, 3),
     ("SoXayDung.pdf", "Phú Thọ", 151, 144, 7),
     ("SoYTe.xlsx", "Phú Thọ", 25, 25, 0),
+    ("SoNNMT_HCM.xlsx", "Hồ Chí Minh", 212, 212, 0),
+    ("HanhThong.docx", "Hồ Chí Minh", 71, 71, 0),
+    ("PhongHai.pdf", "Lào Cai", 134, 134, 0),
 ]
 
 
@@ -262,6 +269,40 @@ def unit_checks():
     # khong noi dong chi co SDT vao dong da co SDT
     rows = [["1", "A", "x", "a@x.vn", "0336688595"], ["", "", "Trường X", "", "0971053516"]]
     check(len(core.merge_wrapped_continuation_rows(rows, 1, 0)) == 2, "không nối dòng chỉ có SĐT vào SĐT trước")
+    # --- Lo ngay 14/10: ten mien go sai, gop don vi ve co quan chu quan, tinh theo email ---
+    emails = ["a%d@tphcm.gov.vn" % i for i in range(30)] + ["b@tphcm.gov.com", "c@laocai.goc.vn", "d@iclord.com"]
+    fx = core.find_typo_domain_fixes(emails)
+    check(fx == {"tphcm.gov.com": "tphcm.gov.vn"}, f"sửa tên miền: chỉ .gov.com (laocai.goc.vn không có tên miền đúng) {fx}")
+    emails = ["x%d@laocai.gov.vn" % i for i in range(20)] + ["y@laocai.goc.vn", "z@laocai.gov.vnv", "w@icloud.com"]
+    fx = core.find_typo_domain_fixes(emails)
+    check(fx == {"laocai.goc.vn": "laocai.gov.vn", "laocai.gov.vnv": "laocai.gov.vn"}, f"sửa tên miền goc/vnv {fx}")
+    emails = ["u%d@ctu.edu.vn" % i for i in range(40)] + ["v%d@cmu.edu.vn" % i for i in range(3)]
+    check(core.find_typo_domain_fixes(emails) == {}, "không sửa nhầm 2 cơ quan thật (ctu/cmu.edu.vn)")
+    emails = ["u%d@phutho.gov.vn" % i for i in range(60)] + ["v%d@phutho.edu.vn" % i for i in range(10)]
+    check(core.find_typo_domain_fixes(emails) == {}, "không nhầm phutho.edu.vn với phutho.gov.vn")
+    emails = ["u%d@phutho.edu.vn" % i for i in range(100)] + ["v%d@phuttho.edu.vn" % i for i in range(15)]
+    check(core.find_typo_domain_fixes(emails) == {"phuttho.edu.vn": "phutho.edu.vn"}, "thống kê: phuttho.edu.vn -> phutho.edu.vn")
+    for raw, exp in [
+        ("Chi nhánh VPĐK đất đai số 1 - VPĐK đất đai thành phố - Sở Nông nghiệp và Môi trường thành phố Hồ Chí minh",
+         "Sở Nông nghiệp và Môi trường - Hồ Chí Minh"),
+        ("Bảo tàng Mỹ thuật Thành phố Hồ Chí Minh, Sở Văn hóa và Thể thao Thành phố Hồ Chí Minh",
+         "Sở Văn hóa và Thể thao - Hồ Chí Minh"),
+        ("Chi cục Kiểm lâm/ Đội Kiểm lâm cơ động số 1 - Sở Nông nghiệp và Môi trường thành phố Hồ Chí minh",
+         "Sở Nông nghiệp và Môi trường - Hồ Chí Minh"),
+        ("Sở Tư pháp", "Sở Tư pháp - Hồ Chí Minh"),
+        ("Phòng Quản lý đất đai", "Phòng Quản lý đất đai - Hồ Chí Minh"),
+    ]:
+        got = v2.normalize_don_vi(raw, "Hồ Chí Minh")
+        check(got == exp, f"gộp về cơ quan chủ quản: {raw[:40]!r} -> {got!r}")
+    em = ["a%d@laocai.gov.vn" % i for i in range(10)]
+    check(v2.check_default_province(em, "Hồ Chí Minh") is not None, "cảnh báo: email laocai.gov.vn nhưng mặc định Hồ Chí Minh")
+    check(v2.check_default_province(em, "Lào Cai") is None, "không cảnh báo khi mặc định khớp email")
+    check(v2.check_default_province(["a%d@vinhphuc.gov.vn" % i for i in range(10)], "Phú Thọ") is None,
+          "tên cũ vinhphuc.gov.vn gộp về Phú Thọ: không cảnh báo oan")
+    check(v2.check_default_province(["a%d@phutho.edu.vn" % i for i in range(10)], "Hồ Chí Minh") is None,
+          "chỉ xét *.gov.vn (edu.vn không kết luận)")
+    check(v2.check_default_province(["a%d@tphcm.gov.vn" % i for i in range(10)], "Viện Năng lượng nguyên tử Việt Nam") is None,
+          "Tổ chức mặc định không phải tỉnh: không so")
     # --- Loi 5: STT lech 1 cot ---
     p = v2._parse_row_by_content(["", "8", "", "", "Đoàn Ngọc Có", "", "", "Phó Giám đốc Sở", "", "",
                                   "codn@snnmt.gialai.gov.vn", "", "", "0905297904", ""])
@@ -534,6 +575,26 @@ def _qualitative(results):
               "Lâm Thao chế độ 2: 7 người khôi phục đúng họ tên + SĐT (không lấy SĐT của người kế tiếp)")
         check(sum(1 for x in results["LamThao.pdf"][0] if x["phone"]) == 222, "Lâm Thao: 222/223 có SĐT (STT 35 nguồn thiếu số)")
         check(len(results["LamThao.pdf"][1].get("recovered_names", {})) >= 7, "Lâm Thao: liệt kê họ tên đã khôi phục")
+    if "SoNNMT_HCM.xlsx" in results:
+        recs, st = results["SoNNMT_HCM.xlsx"]
+        check({r["don_vi"] for r in recs} == {"Sở Nông nghiệp và Môi trường - Hồ Chí Minh"},
+              "SoNNMT: gộp 16 đơn vị về cơ quan chủ quản (1 đơn vị)")
+        check(not any(r["email"].endswith(".gov.com") for r in recs) and sum(1 for r in recs if r["email"].endswith("@tphcm.gov.vn")) == 211,
+              "SoNNMT: 9 email .gov.com đã sửa về tphcm.gov.vn (211 @tphcm.gov.vn + 1 gmail)")
+        check(any("@tphcm.gov.com → @tphcm.gov.vn" in w for w in st["warnings"]), "SoNNMT: cảnh báo đã sửa tên miền")
+        check(sum(1 for r in recs if r["phone"]) == 203, "SoNNMT: 203/212 có SĐT (9 người nguồn không ghi)")
+    if "PhongHai.pdf" in results:
+        recs, st = results["PhongHai.pdf"]
+        check({r["don_vi"] for r in recs} == {"Xã Phong Hải - Lào Cai"}, "Phong Hải: 1 đơn vị")
+        by = {r["stt"]: r["email"] for r in recs}
+        check(by.get("31") == "phamduchanh1@laocai.gov.vn", "Phong Hải: STT 31 sửa @laocai.goc.vn -> .gov.vn")
+        check(by.get("26", "").endswith("@iclord.com"), "Phong Hải: STT 26 @iclord.com để nguyên (không đoán)")
+        check(sum(1 for r in recs if r["phone"]) == 131, "Phong Hải: 131/134 có SĐT (3 SĐT sai độ dài để trống)")
+        check(not any("gợi ý" in w for w in st["warnings"]), "Phong Hải (mặc định Lào Cai): không cảnh báo tỉnh")
+    if "HanhThong.docx" in results:
+        recs = results["HanhThong.docx"][0]
+        check({r["don_vi"] for r in recs} == {"Phường Hạnh Thông - Hồ Chí Minh"} and all(r["phone"] for r in recs),
+              "Hạnh Thông: 1 đơn vị, 71/71 có SĐT (email xuống dòng trước @ nối đúng)")
     if "HoiThinh.pdf" in results:
         check({r["don_vi"] for r in results["HoiThinh.pdf"][0]} == {"Xã Hội Thịnh - Phú Thọ"}, "Hội Thịnh: 1 đơn vị 'Xã Hội Thịnh'")
     if "TienLu.xlsx" in results:

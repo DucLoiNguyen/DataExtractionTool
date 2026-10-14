@@ -972,11 +972,15 @@ class ContactExtractorGUI(tk.Tk):
                             for i in sheets]
                 else:
                     rows = [(None, None, False, 0)]
+                # O To chuc trong -> goi y tu ten mien email '<tinh>.gov.vn' pho bien nhat
+                # (chi Excel/Word/CSV, nhanh); nguoi dung van sua duoc. Nhap nham tinh o lo
+                # nhieu tep rat de, khong co goi y/canh bao thi im lang.
+                p_value = value or (v2.suggest_to_chuc(p) or "")
                 for sheet, emails, skip, overlap in rows:
                     if (p, sheet) in existing:
                         continue
                     existing.add((p, sheet))
-                    self.mode2_sources.append({"path": p, "sheet": sheet, "to_chuc": value, "emails": emails,
+                    self.mode2_sources.append({"path": p, "sheet": sheet, "to_chuc": p_value, "emails": emails,
                                                "skip": skip, "overlap": overlap})
         finally:
             self.config(cursor="")

@@ -458,6 +458,30 @@ def _find_doc_issuer(header_text, body_text=None, max_lines=8):
     return None
 
 
+_PARENT_SEP_RE = re.compile(r"\s+[-–—]\s+|,\s*|;\s*")
+_PARENT_AGENCY_RE = re.compile(r"^Sở\s+\S", re.IGNORECASE)
+_PROVINCE_TAIL_RE = re.compile(r"\s+(?:thành\s*phố|tỉnh|tp\.?)\s+(.+)$", re.IGNORECASE)
+
+
+def _parent_agency(text):
+    """Don vi ghi KEM co quan chu quan o cuoi ('Chi nhánh VPĐK đất đai số 1 - VPĐK đất
+    đai thành phố - Sở Nông nghiệp và Môi trường thành phố Hồ Chí minh', Bảo tàng
+    'Bảo tàng Mỹ thuật Thành phố Hồ Chí Minh, Sở Văn hóa và Thể thao Thành phố Hồ
+    Chí Minh') -> tra ve CO QUAN CHU QUAN (Sở) bo phan ten tinh/thanh o duoi
+    ('Sở Nông nghiệp và Môi trường'); khong co -> None. Nguoi dung chon (14/10/2026)
+    GOP HET ve co quan chu quan, giong quy tac gop cap duoi xa/phuong. Chi xet khi
+    doan CUOI bat dau bang 'Sở' va truoc do con it nhat 1 doan khac (Sở đứng một mình
+    -> khong doi gi)."""
+    parts = [p.strip() for p in _PARENT_SEP_RE.split(text) if p and p.strip()]
+    if len(parts) < 2 or not _PARENT_AGENCY_RE.match(parts[-1]):
+        return None
+    parent = parts[-1]
+    m = _PROVINCE_TAIL_RE.search(parent)
+    if m and get_current_province_name(m.group(1).strip())[0]:
+        parent = parent[:m.start()].strip()
+    return parent if len(parent.split()) >= 2 else None
+
+
 def normalize_don_vi(raw_don_vi_cong_tac, default_to_chuc=None, doc_commune=None, doc_issuer=None):
     """Ap dung quy tac 1: tra ve chuoi Don vi da chuan hoa, THEM ten tinh/
     thanh (dang ngan gon, khong tien to, khong viet hoa toan bo) o CUOI,
@@ -477,6 +501,11 @@ def normalize_don_vi(raw_don_vi_cong_tac, default_to_chuc=None, doc_commune=None
     if not raw_don_vi_cong_tac:
         return ""
     text = unicodedata.normalize("NFC", str(raw_don_vi_cong_tac)).strip()  # (khong dung core.* o day: bien cuc bo core)
+
+    # Don vi kem co quan chu quan (Sở) o cuoi -> gop ve co quan chu quan (xem _parent_agency).
+    parent = _parent_agency(text)
+    if parent:
+        text = parent
 
     # O don vi CHI GHI CHUC VU thuan tuy ("Giám đốc sở", "Phó Giám đốc Sở") ma
     # van ban co co quan ban hanh ro o dau (khong phai xa/phuong) -> don vi la
@@ -536,6 +565,69 @@ def normalize_don_vi(raw_don_vi_cong_tac, default_to_chuc=None, doc_commune=None
 # ---------------------------------------------------------------------------
 # 3. XAC DINH "TO CHUC"
 # ---------------------------------------------------------------------------
+# Ten mien email co quan '<tinh>.gov.vn' -> tinh/thanh: dung tu bang ten tinh (cu + moi)
+# + vai ten viet tat. Chi dung de CANH BAO/GOI Y khi Tổ chức mac dinh nhap nham tinh.
+_PROVINCE_SLUGS = {}
+for _name, _cur in _OLD_NAME_TO_CURRENT.items():
+    _PROVINCE_SLUGS[re.sub(r"[^a-z0-9]", "", _norm_key(_name))] = _cur
+_PROVINCE_SLUGS.update({"tphcm": "Hồ Chí Minh", "hcm": "Hồ Chí Minh", "hochiminh": "Hồ Chí Minh",
+                        "tphochiminh": "Hồ Chí Minh", "danang": "Đà Nẵng", "cantho": "Cần Thơ",
+                        "haiphong": "Hải Phòng", "hanoi": "Hà Nội"})
+
+
+def province_from_emails(emails, min_count=3, min_share=0.5):
+    """Tinh/thanh suy ra tu ten mien email '<tinh>.gov.vn' PHO BIEN NHAT cua tep
+    (>= min_count lan, chiem >= min_share) -> (ten_hien_tai, ten_mien) hoac
+    (None, None). Chi xet '*.gov.vn' va nhan ngay truoc 'gov' phai la ten tinh da
+    biet (bo qua edu.vn, gmail.com, dcs.vn, bo/nganh trung uong)."""
+    from collections import Counter
+    doms = Counter(e.split("@", 1)[1] for e in emails if e and "@" in e)
+    total = sum(doms.values())
+    gov = [(d, n) for d, n in doms.items() if d.endswith(".gov.vn") and len(d.split(".")) >= 3]
+    if not gov or not total:
+        return None, None
+    d, n = max(gov, key=lambda kv: kv[1])
+    if n < min_count or n < min_share * total:
+        return None, None
+    return _PROVINCE_SLUGS.get(d.split(".")[-3]), d
+
+
+def check_default_province(emails, default_to_chuc):
+    """Canh bao (chuoi) neu Tổ chức mac dinh (la 1 tinh/thanh) khac tinh goi y boi
+    ten mien email pho bien; None neu khop/khong ket luan duoc. Chi canh bao,
+    KHONG tu doi (nhap nham tinh o lo nhieu tep rat de, khong co canh bao thi im lang)."""
+    if not default_to_chuc:
+        return None
+    chosen = get_current_province_name(default_to_chuc)[0]
+    if not chosen:
+        return None
+    guess, dom = province_from_emails(emails)
+    if guess and guess != chosen:
+        return (f"Email phổ biến @{dom} gợi ý {guess}, nhưng Tổ chức mặc định đang là {chosen} - "
+                "hãy kiểm tra lại ô \"Tổ chức mặc định\" của tệp này.")
+    return None
+
+
+def suggest_to_chuc(path):
+    """Goi y Tổ chức mac dinh cho 1 tep (GUI dien san khi o trong) tu ten mien email;
+    chi cho Excel/CSV/Word (nhanh), PDF bo qua (doc cham tren luong giao dien).
+    Tra ve ten tinh/thanh hoac None."""
+    ext = os.path.splitext(path)[1].lower()
+    try:
+        if ext in (".xls", ".xlsx", ".xlsm"):
+            emails = [e for _n, rows in core.read_excel_sheets(path) for e in core.sheet_emails(rows)]
+        elif ext == ".docx":
+            import docx
+            doc = docx.Document(path)
+            text = "\n".join(core._full_cell_text(c) for t in doc.tables for r in t.rows for c in r.cells)
+            emails = [m.group(0).lower() for m in core.EMAIL_REGEX.finditer(re.sub(r"\s+", "", text))]
+        else:
+            return None
+    except Exception:
+        return None
+    return province_from_emails(emails)[0]
+
+
 def determine_to_chuc(raw_don_vi_cong_tac, default_to_chuc=None):
     """Ap dung quy tac 2: tra ve chuoi TO CHUC da VIET HOA TOAN BO, hoac ""
     neu khong xac dinh duoc (khong tim thay trong van ban VA khong co
@@ -1890,6 +1982,9 @@ def extract_v2(input_path, default_to_chuc=None, dedupe=True, verbose=True, shee
     for rec in clean_records:
         rec["name"] = core.strip_honorific_by_email(rec["name"], rec["email"])
 
+    # --- Ten mien go sai ro rang (tphcm.gov.com, laocai.goc.vn) -> tu sua + canh bao ---
+    warnings.extend(core.apply_typo_domain_fixes(clean_records, lambda r: r.get("stt")))
+
     # --- Email co ten mien bi cat cut (vd "@laocai.go") -> Can kiem tra ---
     truncated = core.find_truncated_domain_emails([r["email"] for r in clean_records])
     if truncated:
@@ -1910,6 +2005,10 @@ def extract_v2(input_path, default_to_chuc=None, dedupe=True, verbose=True, shee
         clean_records, duplicates_removed = dedupe_records(clean_records, issues)
 
     to_chuc_missing = sum(1 for r in clean_records if not r["to_chuc"])
+
+    mismatch = check_default_province([r["email"] for r in clean_records], default_to_chuc)
+    if mismatch:
+        warnings.append(mismatch)
 
     # Ca 1 cot trong tren moi ban ghi -> gan nhu chac chan cot do khong duoc
     # nhan dien (tieu de la / lech cot), khong phai nguon thieu that.

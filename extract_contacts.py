@@ -2212,6 +2212,89 @@ def strip_honorific_by_email(name, email):
     return name
 
 
+# Nhan "gov" go sai thuong gap (tphcm.goc.vn, ...gv.vn): chi xet khi tep co ten mien
+# dung '<cung phan dau>.gov.vn' phổ biến.
+_GOV_LABEL_TYPOS = {"goc", "gv", "gob", "giv", "gvo", "gpv", "gof", "got", "gav", "gov"}
+_TYPO_MIN_FIRST_LABEL = 5   # ten mien qua ngan (ctu/cmu.edu.vn) de nham 2 co quan that
+
+
+def _edit_distance_le1(a, b):
+    """True neu a, b khac nhau toi da 1 ky tu (them/bot/thay)."""
+    if a == b:
+        return True
+    la, lb = len(a), len(b)
+    if abs(la - lb) > 1:
+        return False
+    if la > lb:
+        a, b, la, lb = b, a, lb, la
+    i = 0
+    while i < la and a[i] == b[i]:
+        i += 1
+    if la == lb:
+        return a[i + 1:] == b[i + 1:]
+    return a[i:] == b[i + 1:]
+
+
+def find_typo_domain_fixes(emails):
+    """Tim TEN MIEN GO SAI RO RANG so voi ten mien pho bien trong CUNG tep ->
+    {ten_mien_sai: ten_mien_dung}. Hai luat, deu rat than trong:
+      1) TAT DINH (ten mien co quan): '<dau>.<goc|gv|gov...>.<tld>' khong phai
+         '.gov.vn' (vd 'tphcm.gov.com', 'laocai.goc.vn', 'x.gov.vnv') ma tep co
+         '<dau>.gov.vn' >= 3 lan va nhieu gap >= 5 lan.
+      2) THONG KE: cach ten mien pho bien (>= 10 lan, nhieu gap >= 5 lan) dung 1
+         ky tu (phuttho.edu.vn, phutho.eedu.vn, pthutho.gov.vn, phutho.gov.vnv);
+         nhan dau >= 5 ky tu de khong nham 2 co quan that (ctu/cmu).
+    Khong dung cho ten mien email ca nhan (iclord.com: khong co ten mien dung
+    pho bien trong tep -> de nguyen)."""
+    from collections import Counter
+    doms = Counter(e.split("@", 1)[1] for e in emails if e and "@" in e)
+    fixes = {}
+    for d, n in doms.items():
+        labels = d.split(".")
+        # 1) tat dinh
+        if len(labels) >= 3:
+            head, lab, tld = ".".join(labels[:-2]), labels[-2], labels[-1]
+            if lab in _GOV_LABEL_TYPOS and not (lab == "gov" and tld == "vn"):
+                cand = head + ".gov.vn"
+                if cand != d and doms.get(cand, 0) >= 3 and doms[cand] >= 5 * n:
+                    fixes[d] = cand
+                    continue
+        # 2) thong ke
+        if len(labels[0]) < _TYPO_MIN_FIRST_LABEL:
+            continue
+        best = None
+        for D, N in doms.items():
+            if D == d or N < 10 or N < 5 * n or len(D.split(".")[0]) < _TYPO_MIN_FIRST_LABEL:
+                continue
+            if _edit_distance_le1(d, D) and (best is None or N > doms[best]):
+                best = D
+        if best:
+            fixes[d] = best
+    return fixes
+
+
+def apply_typo_domain_fixes(records, ident):
+    """Sua ten mien go sai TAI CHO trong records (dict co "email"). ident(rec)
+    -> nhan dong (STT) de ghi chu. Tra ve list canh bao (chuoi) mo ta cac sua
+    doi, rong neu khong co gi."""
+    fixes = find_typo_domain_fixes([r["email"] for r in records])
+    if not fixes:
+        return []
+    by_fix = {}
+    for r in records:
+        local, _, dom = r["email"].partition("@")
+        if dom in fixes:
+            r["email"] = f"{local}@{fixes[dom]}"
+            by_fix.setdefault((dom, fixes[dom]), []).append(ident(r))
+    msgs = []
+    for (old, new), ids in by_fix.items():
+        nums = [n for n in (parse_stt(i) for i in ids) if n is not None]
+        where = f" (STT {format_stt_list(nums)})" if nums else ""
+        msgs.append(f"Đã sửa tên miền email gõ sai ở {len(ids)} dòng: @{old} → @{new}{where} - "
+                    "hãy đối chiếu với tệp gốc.")
+    return msgs
+
+
 def find_truncated_domain_emails(emails, min_count=3):
     """Tra ve tap cac email co TEN MIEN BI CAT CUT so voi ten mien pho bien
     trong CUNG file: ten mien d la tien to (vd "laocai.go", "laocai.gov") hoac
@@ -2432,6 +2515,11 @@ def extract_all(inputs, dedupe=True, verbose=True):
 
     for r in all_records:
         r["name"] = strip_honorific_by_email(r["name"], r["email"])
+
+    # Ten mien go sai ro rang (tphcm.gov.com -> tphcm.gov.vn): tu sua + canh bao.
+    for msg in apply_typo_domain_fixes(
+            all_records, lambda r: (r.get("_context") or {}).get("stt") or (r.get("_context") or {}).get("row_number")):
+        add_warning(row_stats, msg)
 
     # Email co ten mien bi cat cut (xem find_truncated_domain_emails) -> loai,
     # dua vao "Can kiem tra" voi ly do "Email sai định dạng".

@@ -91,6 +91,8 @@ mất dữ liệu của tab kia. File mẫu mặc định tự đổi theo chế
    phần tên** (vd `qthoang thongnhat@...`, có thể thiếu dấu chấm) hoặc **bị cắt giữa từ**
    do gõ chữ có dấu (`thươngpv@...`) cũng bị loại và hiện trong "Cần kiểm tra".
    Email bị cắt theo viền ô bảng PDF được tool tự khôi phục từ toạ độ chữ, kèm cảnh báo.
+   Tên miền gõ sai rõ ràng so với tên miền phổ biến trong cùng tệp (vd `@tphcm.gov.com`,
+   `@laocai.goc.vn`, `@phuttho.edu.vn`) được **tự sửa** kèm cảnh báo nêu STT.
    Email có dấu cách trong **tên miền** (vd `...@sonla gov.vn`, `...@p htho.gov.vn`) cũng bị loại thay vì
    nối liền thành tên miền sai.
 2. **Số điện thoại**: chuẩn theo định dạng Việt Nam (10 số, bắt đầu bằng 0);
@@ -105,7 +107,9 @@ mất dữ liệu của tab kia. File mẫu mặc định tự đổi theo chế
    hiện trong "Cần kiểm tra".
 
 **Riêng chế độ 2** có thêm 2 quy tắc:
-- **Đơn vị**: `<cấp hành chính> <tên riêng> - <tỉnh/thành>` (vd `UBND phường
+- **Đơn vị**: ô đơn vị ghi kèm Sở chủ quản ở cuối (vd `Phòng X - Sở Nông nghiệp và Môi trường thành phố
+  Hồ Chí Minh`) được gộp về Sở (`Sở Nông nghiệp và Môi trường - Hồ Chí Minh`).
+  Mặc định: `<cấp hành chính> <tên riêng> - <tỉnh/thành>` (vd `UBND phường
   Ninh Kiều` → `Phường Ninh Kiều - Cần Thơ`). Ô đơn vị chỉ ghi chức vụ ("Phó
   Giám đốc Sở") thì lấy cơ quan ban hành ở đầu văn bản (vd `Sở Nông nghiệp và
   Môi trường - Gia Lai`). Đơn vị cấp dưới xã/phường (phòng,
@@ -118,6 +122,8 @@ mất dữ liệu của tab kia. File mẫu mặc định tự đổi theo chế
   tỉnh/thành sau sáp nhập 2025. Ô "Tổ chức mặc định" dùng khi nguồn không nêu
   rõ; nếu ô này không phải tỉnh/thành (vd "Viện Năng lượng nguyên tử Việt
   Nam") thì dùng nguyên văn cho mọi dòng.
+  Tool còn cảnh báo khi "Tổ chức mặc định" khác tỉnh gợi ý bởi tên miền email phổ biến (vd email
+  `@laocai.gov.vn` nhưng mặc định `Hồ Chí Minh`), và điền sẵn gợi ý vào ô này khi để trống (Excel/Word).
 
 ## Về độ chính xác
 
