@@ -1,0 +1,12 @@
+.git
+.github
+__pycache__/
+*.pyc
+test_data/
+tests/
+*.md
+!webapp/README.md
+gui*.py
+guiv2.py
+regression.py
+.venv/
