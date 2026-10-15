@@ -28,7 +28,7 @@ tests/                          # pytest cho API web (python -m pytest)
 scripts/regression.py           # Bảng hồi quy mục 7 + kiểm tra đơn vị: python scripts/regression.py --detail
 docs/                           # web.md (kiến trúc web, API, cấu hình), FIXING.md (ghi chú sửa lỗi cũ)
 legacy/                         # gui_notion.py, guiv2.py: bản giao diện cũ, không còn chạy được sau khi chuyển package
-README.md                       # Hướng dẫn cho người dùng cuối
+README.md                       # Hướng dẫn người dùng cuối: cài đặt Windows, 3 cách chạy (Tkinter/web/CLI), quy tắc, lỗi thường gặp
 test_data/                      # File gốc của người dùng, tên ngắn (TaPhin.pdf...) — KHÔNG commit (.gitignore)
 ```
 
@@ -52,6 +52,14 @@ python3 -m dataextraction.core ...               # CLI chế độ 1 (xem main()
 ```
 
 **Thoả thuận về web/DevOps (14/10/2026, người dùng chọn)**: web tách **frontend (`frontend/`) và backend (API)**, 1 repo. Người dùng **tự làm thủ công** mọi phần triển khai (Dockerfile, compose, Nginx, CI, Kubernetes...) để luyện DevOps: **đừng thêm các tệp đó** và đừng tự cấu hình triển khai; chỉ giữ code app triển khai được thuận tay (cấu hình qua biến môi trường, `/api/health`, README ghi cách build/chạy). Hiệu năng là yêu cầu quan trọng (xem "Hiệu năng" trong `docs/web.md`). Giao diện web theo `DESIGN.md` (phong cách dịu, độ dày thông tin cao, chuyển động vừa phải, chữ trên nền coral là `--on-accent` chứ không phải trắng).
+
+**Bản web — tóm tắt kiến trúc** (chi tiết: `docs/web.md`, `frontend/README.md`, `DESIGN.md`):
+- Backend `src/dataextraction/web/app.py` chỉ là API, luồng "tải lên 1 lần + việc nền": `POST /api/uploads` (trả `file_id`, danh sách sheet, gợi ý Tổ chức) → `POST /api/jobs` (202; body `{mode, sources:[{file_id, sheet, to_chuc}], dedupe, password}`) → hỏi `GET /api/jobs/{id}` (`running`/`done`/`error`) → `GET /api/download/{job_id}/{result|issues}`. Còn có `GET /api/health`, `GET /api/config`, `DELETE /api/uploads/{id}`. Việc nặng chạy trong `ThreadPoolExecutor(max_workers=1)` dưới khoá `_work_lock`; trạng thái nằm trong bộ nhớ nên **chỉ chạy được 1 bản backend**; dọn tệp/việc hết hạn bằng `_cleanup()`. Biến môi trường: `DATAEXTRACTION_MAX_UPLOAD_MB`, `DATAEXTRACTION_TTL_SECONDS`, `DATAEXTRACTION_WORK_DIR`. Không có DB, không có đăng nhập (dữ liệu là thông tin cá nhân: chỉ chạy nội bộ). Logic nghiệp vụ vẫn ở `core.py`/`mode2.py`, web không sửa chúng.
+- Frontend `frontend/`: Vite + React 19 + TypeScript + Tailwind v4 (token trong `src/index.css`), Radix, `@tanstack/react-table` **v8** (đừng nâng v9), `@tanstack/react-virtual` (bảng ~6000 dòng chỉ vẽ ~28 hàng DOM), Motion dùng `LazyMotion` + `m.*` và tôn trọng reduced-motion. Trình duyệt chỉ gọi đường dẫn tương đối `/api/...`; Vite dev proxy sang `http://127.0.0.1:8000` (đổi bằng `VITE_API_PROXY`). Kiểm tra: `npx tsc -b`, `npm run lint`, `npm test`, `npm run build`; backend: `python -m pytest` (15 test).
+- **Tương phản**: chữ trắng trên coral `#cc785c` chỉ đạt 3,28:1 nên nút chính/tab đang chọn/checkbox dùng `--on-accent: #181715`.
+- Windows chạy bản web: 2 cửa sổ PowerShell — backend trước (`py -m pip install -e ".[web]"` rồi `py -m dataextraction.web`), sau đó `npm run dev` trong `frontend/`. Lỗi hay gặp: `ECONNREFUSED 127.0.0.1:8000` = chưa bật backend; `No module named 'dataextraction'` = bản checkout cũ chưa có `src/dataextraction/web` hoặc chưa `pip install -e`. Bảng lỗi đầy đủ trong `README.md`.
+- Nhánh: mã web đã nằm trên `main`; các nhánh `claude/...` chỉ là nhánh làm việc tạm. Commit 61477c2 để lại `package-lock.json` rỗng ở thư mục gốc (không dùng, có thể xoá).
+
 
 ## 3. Hai chế độ
 
