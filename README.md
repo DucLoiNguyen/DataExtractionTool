@@ -1,72 +1,147 @@
-# Bộ công cụ tạo danh sách tài khoản
+# Công cụ tạo danh sách tài khoản
 
-**1 giao diện duy nhất**, cho phép chọn 1 trong 2 chế độ trích xuất tuỳ theo
-loại dữ liệu đầu vào bạn có.
+Các cơ quan nhà nước gửi danh sách cán bộ đăng ký tài khoản "Nền tảng Trí tuệ nhân tạo hỗ trợ công vụ"
+dưới rất nhiều dạng: công văn PDF, Word (`.docx`/`.doc`), Excel (`.xlsx`/`.xls`), CSV. Công cụ này
+**trích xuất Họ tên / Email / SĐT** (và **Đơn vị / Tổ chức** ở chế độ 2), chuẩn hoá theo quy tắc cố định rồi
+xuất ra tệp Excel theo file mẫu để nhập vào hệ thống tạo tài khoản. Dòng nào không xử lý chắc chắn được
+thì đưa vào danh sách **"Cần kiểm tra"** kèm lý do; công cụ không tự bịa dữ liệu.
+
+Có **3 cách dùng**, cùng một bộ máy trích xuất (sửa quy tắc ở `core.py`/`mode2.py` là áp dụng cho cả 3):
+
+| Cách dùng | Dành cho | Cách chạy |
+|---|---|---|
+| **Giao diện Tkinter** (máy tính để bàn) | Người dùng cuối trên Windows | `py gui.py` |
+| **Web** (backend FastAPI + frontend React) | Dùng qua trình duyệt, và để luyện triển khai | xem [Chạy bản web](#cách-2-bản-web) |
+| **Dòng lệnh** | Chạy hàng loạt, viết script | `py -m dataextraction.core ...` / `py -m dataextraction.mode2 ...` |
 
 ## Cấu trúc thư mục
 
 ```
-📁 (thư mục này)
-├── gui.py                       🖥️  CHẠY FILE NÀY — giao diện Tkinter
+(thư mục gốc)
+├── gui.py                       Chạy giao diện Tkinter (không cần cài package)
+├── pyproject.toml               Khai báo package "dataextraction", thư viện, tuỳ chọn cài (web / dev / windows)
 ├── src/dataextraction/
-│   ├── core.py                  ⚙️  Logic dùng chung + chế độ 1
-│   ├── mode2.py                 ⚙️  Logic riêng cho chế độ 2
-│   ├── gui.py                   🖥️  Mã giao diện Tkinter
-│   ├── web/                     🌐  API web (FastAPI)
-│   └── templates/               📄  2 file mẫu Excel
-├── frontend/                    🌐  Giao diện web (Vite + React)
-├── DESIGN.md                    🎨  Quy chuẩn thiết kế giao diện web
-├── tests/                       🧪  Test cho API web (pytest)
-├── scripts/regression.py        🧪  Kiểm tra hồi quy (dành cho người bảo trì)
-├── docs/                        📖  Tài liệu thêm (web.md...)
-├── legacy/                      🗄️  Giao diện bản cũ, không còn dùng
-└── pyproject.toml               📦  Khai báo package và thư viện
+│   ├── core.py                  Logic dùng chung + chế độ 1
+│   ├── mode2.py                 Logic riêng của chế độ 2 (dùng lại core.py)
+│   ├── gui.py                   Mã giao diện Tkinter
+│   ├── web/app.py               API web (FastAPI); KHÔNG phục vụ giao diện
+│   └── templates/               2 file mẫu Excel (chế độ 1 và chế độ 2)
+├── frontend/                    Giao diện web: Vite + React + TypeScript + Tailwind CSS
+├── DESIGN.md                    Quy chuẩn thiết kế giao diện web (màu, chữ, bố cục, chuyển động)
+├── tests/                       Test API web (pytest)
+├── scripts/regression.py        Bảng hồi quy trên tệp thật (dành cho người bảo trì)
+├── docs/                        web.md (kiến trúc web, API, biến môi trường), FIXING.md
+├── legacy/                      Giao diện Tkinter bản cũ, chỉ để tham khảo, không còn chạy được
+├── CLAUDE.md                    Ghi chú kỹ thuật chi tiết và các quy tắc nghiệp vụ đã chốt (cho người bảo trì / Claude)
+└── test_data/                   Tệp thật của người dùng để chạy hồi quy; KHÔNG commit (có thể không tồn tại)
 ```
 
-Chạy giao diện: `py gui.py` (không cần cài package). Chạy bản web (backend + frontend, 2 cửa sổ dòng lệnh): xem `docs/web.md`.
+**Nhánh Git:** toàn bộ mã (Tkinter, API web, frontend, tài liệu) nằm trên nhánh **`main`**.
+Các nhánh `claude/...` là nhánh làm việc tạm cho từng đợt thay đổi; muốn dùng bản mới nhất thì dùng `main`.
 
-## Cài đặt (chỉ cần làm 1 lần)
+## Cài đặt trên Windows (làm 1 lần)
 
-```bash
-pip install -e .
+Cần **Python 3.10 trở lên** (đã thử trên 3.13) và, nếu chạy bản web, **Node.js 20.19+ hoặc 22.12+** (kèm `npm`).
+Mở PowerShell trong thư mục dự án (ví dụ `D:\DataExtractionTool`) rồi chạy:
+
+```powershell
+git checkout main
+git pull
+py -m pip install -e ".[windows]"      # thư viện cốt lõi + pywin32 (để đọc .doc/.xls cũ qua Microsoft Office)
 ```
 
-(hoặc, nếu chỉ chạy `gui.py`: `pip install openpyxl python-docx pdfplumber xlrd`)
+Máy bạn không có `git` trong PATH thì dùng GitHub Desktop (Fetch origin, chọn nhánh `main`, Pull origin) hoặc
+chạy `git.exe` bằng đường dẫn đầy đủ của GitHub Desktop.
 
-Để đọc tệp Word cũ `.doc` (Word 97-2003), tool nhờ **Microsoft Word** trên máy
-tự chuyển sang `.docx`; cần cài thêm:
+Các tuỳ chọn cài đặt (`pip install -e ".[tên]"`):
 
-```bash
-pip install pywin32
-```
+| Tuỳ chọn | Cài thêm | Khi nào cần |
+|---|---|---|
+| (không có) | openpyxl, python-docx, pdfplumber, xlrd | Chỉ chạy giao diện Tkinter / dòng lệnh |
+| `windows` | pywin32 (chỉ trên Windows) | Đọc `.doc` (Word 97-2003) và `.xls` hỏng qua Microsoft Word/Excel |
+| `web` | fastapi, uvicorn, python-multipart | Chạy API của bản web |
+| `dev` | gồm `web` + pytest, httpx, ruff | Phát triển, chạy test |
 
-Word chạy ẩn, không ảnh hưởng tới các cửa sổ Word bạn đang mở. Tệp `.xls` bị
-hỏng mà thư viện xlrd không đọc được cũng tự chuyển qua Excel theo cách này.
-Nếu máy không có Microsoft Office, tool dùng [LibreOffice](https://www.libreoffice.org/)
-khi có cài; không có cả hai thì mở tệp bằng Word/Excel, chọn "Save As" sang
-`.docx`/`.xlsx` rồi dùng tệp mới.
+Có thể ghép: `py -m pip install -e ".[windows,web]"`. Nếu chỉ chạy `gui.py`, cài nhanh bằng
+`py -m pip install openpyxl python-docx pdfplumber xlrd` cũng được.
 
-## Chạy
+**Đọc tệp `.doc`/`.xls` cũ:** công cụ nhờ **Microsoft Word/Excel** trên máy tự chuyển sang `.docx`/`.xlsx` (Word chạy ẩn,
+không ảnh hưởng các cửa sổ Word bạn đang mở; cần `pywin32`). Không có Microsoft Office thì dùng
+[LibreOffice](https://www.libreoffice.org/) nếu có cài; không có cả hai thì mở tệp bằng Word/Excel, chọn "Save As"
+sang `.docx`/`.xlsx` rồi dùng tệp mới. Trên Linux/macOS chỉ có LibreOffice.
 
-```bash
+## Cách 1: Giao diện Tkinter
+
+```powershell
 py gui.py
 ```
 
-## Chọn chế độ
+Chọn chế độ ở tab đầu trang, chọn tệp, bấm **Trích xuất & Xem trước**, kiểm tra kết quả, rồi **Xuất tệp kết quả...**
+(chi tiết thao tác ở mục [Luồng thao tác trên giao diện Tkinter](#luồng-thao-tác-trên-giao-diện-tkinter-cả-2-chế-độ)).
+Cách khác: `py -m dataextraction` (sau khi `pip install -e .`).
 
-Chọn 1 trong 2 tab ở đầu trang:
+## Cách 2: Bản web
+
+Bản web gồm **2 phần chạy riêng**: backend (API Python, cổng 8000) và frontend (React, cổng 5173 khi phát triển).
+Cần mở **2 cửa sổ PowerShell**, **chạy backend trước**:
+
+```powershell
+# Cửa sổ 1 - backend (ở thư mục gốc dự án)
+py -m pip install -e ".[web]"
+py -m dataextraction.web                 # http://127.0.0.1:8000  (kiểm tra: /api/health trả {"ok": true})
+
+# Cửa sổ 2 - frontend
+cd frontend
+npm install
+npm run dev                              # http://localhost:5173  <- mở địa chỉ này trong trình duyệt
+```
+
+Frontend tự chuyển các yêu cầu `/api/...` sang backend. Nếu backend chạy ở nơi khác:
+`$env:VITE_API_PROXY="http://host:cổng"; npm run dev`.
+
+**Lỗi thường gặp**
+
+| Thông báo | Nguyên nhân và cách xử lý |
+|---|---|
+| `connect ECONNREFUSED 127.0.0.1:8000` (cửa sổ `npm run dev`) | Backend chưa chạy. Mở cửa sổ khác chạy `py -m dataextraction.web` trước, rồi tải lại trang. |
+| `No module named 'dataextraction'` | Chưa cài package vào đúng bản Python, hoặc chưa ở nhánh `main` (chưa có thư mục `src`). Chạy `git checkout main`, `git pull`, rồi `py -m pip install -e ".[web]"` trong thư mục gốc. |
+| `npm` không nhận ra lệnh | Chưa cài Node.js (bản LTS), hoặc cần mở lại PowerShell sau khi cài. |
+| Trang trắng hoặc báo "Lỗi 404/500" | Mở `http://127.0.0.1:8000/api/health` kiểm tra backend; xem log ở cửa sổ backend. |
+
+Build frontend ra tệp tĩnh: `cd frontend; npm run build` (kết quả trong `frontend/dist/`). Backend không tự phục vụ giao diện, nên
+khi triển khai thật cần một lớp phía trước phục vụ `dist/` và chuyển `/api/*` sang backend.
+Biến môi trường (`DATAEXTRACTION_MAX_UPLOAD_MB`, `DATAEXTRACTION_TTL_SECONDS`, `DATAEXTRACTION_WORK_DIR`), danh sách API và các giới hạn
+(chỉ chạy được 1 bản backend, chưa có đăng nhập): xem [`docs/web.md`](docs/web.md). Giao diện và thiết kế: [`frontend/README.md`](frontend/README.md), [`DESIGN.md`](DESIGN.md).
+
+## Cách 3: Dòng lệnh
+
+```powershell
+# Chế độ 1 (nhiều tệp được gộp vào 1 kết quả)
+py -m dataextraction.core --input a.pdf b.xlsx --output kq.xlsx [--no-dedupe] [--password MẬT_KHẨU]
+
+# Chế độ 2 (1 hoặc nhiều tệp, gộp vào 1 tệp kết quả, dùng chung --to-chuc)
+py -m dataextraction.mode2 --input X.xlsx Y.pdf --output kq.xlsx --to-chuc "Cần Thơ" [--password Copenai@2026] [--issues-output kq_can_kiem_tra.xlsx]
+```
+
+`--template` mặc định là file mẫu đi kèm trong `src/dataextraction/templates/`. Chế độ 2 qua dòng lệnh để trống cột Mật khẩu
+nếu không truyền `--password`. Khi truyền nhiều tệp, mọi tệp dùng chung `--to-chuc`; muốn mỗi tệp (hoặc mỗi sheet) một Tổ chức
+riêng thì dùng giao diện Tkinter hoặc web.
+
+## Hai chế độ trích xuất
+
+Giao diện Tkinter và giao diện web đều có 2 tab chế độ ở đầu trang:
 
 | | Chế độ 1 | Chế độ 2 |
 |---|---|---|
 | **Dùng khi** | Chỉ cần Email / Họ tên / SĐT | Cần thêm Đơn vị và Tổ chức |
 | **Đầu vào** | 1 tệp PDF, Word (.docx/.doc), Excel (.xlsx/.xls) hoặc CSV mỗi lần | Nhiều tệp PDF, Word (.docx/.doc), Excel (.xlsx/.xls), CSV cùng lúc |
-| **File mẫu** | `cls_template_users.xlsx` | `TemplateV2.xlsx` |
+| **File mẫu** (trong `src/dataextraction/templates/`) | `cls_template_users.xlsx` | `TemplateV2.xlsx` |
 | **Đầu ra** | Email, Mật khẩu, Họ và tên, Điện thoại | Tên tài khoản, Email, SĐT, Mật khẩu, Giới tính*, Ngày sinh*, Đơn vị, Tổ chức |
 
 \* để trống — nguồn không có thông tin này nên tool không tự bịa.
 
-Mỗi chế độ giữ riêng tệp đã chọn và kết quả xem trước; chuyển tab không làm
-mất dữ liệu của tab kia. File mẫu mặc định tự đổi theo chế độ.
+Trên giao diện Tkinter, mỗi chế độ giữ riêng tệp đã chọn và kết quả xem trước; chuyển tab không làm
+mất dữ liệu của tab kia (giao diện web thì xoá danh sách tệp khi đổi chế độ). File mẫu mặc định tự đổi theo chế độ.
 
 **Chế độ 2 xử lý nhiều tệp cùng lúc:**
 - Mỗi tệp (hoặc mỗi sheet Excel, xem dưới) có ô **"Tổ chức mặc định"** riêng,
@@ -159,7 +234,7 @@ Tool cũng tự xử lý một số lỗi trình bày thường gặp trong PDF:
 nhiều trang, dòng tiêu đề nhóm (vd "Ủy ban nhân dân xã ...") không bị tính là
 người, email bị cắt sang ô bên cạnh, cột bị lệch.
 
-## Luồng thao tác chung (cả 2 chế độ)
+## Luồng thao tác trên giao diện Tkinter (cả 2 chế độ)
 
 1. Chọn chế độ → chọn tệp nguồn (chế độ 2: có thể chọn nhiều tệp, mỗi tệp một
    "Tổ chức mặc định").
@@ -174,18 +249,35 @@ người, email bị cắt sang ô bên cạnh, cột bị lệch.
 Có thể tìm kiếm (không phân biệt dấu) và bấm tiêu đề cột để sắp xếp trong cả
 2 tab "Xem trước" và "Cần kiểm tra".
 
-## Dòng lệnh (tuỳ chọn)
+## Phát triển và kiểm thử
 
-```bash
-# Chế độ 1
-py -m dataextraction.core --input a.pdf b.xlsx --output kq.xlsx   # --template mặc định là file mẫu đi kèm
+```powershell
+py -m pip install -e ".[dev]"
+py -m pytest -q                          # test API web (gọi API thật, không mock logic trích xuất)
+py -m ruff check .                       # kiểm tra mã Python mới (web, tests)
 
-# Chế độ 2 (1 hoặc nhiều tệp, gộp vào 1 tệp kết quả)
-py process_template_v2.py --input X.xlsx Y.pdf --template TemplateV2.xlsx \
-    --output kq.xlsx --to-chuc "Cần Thơ" --password Copenai@2026
+cd frontend
+npm test                                 # Vitest
+npm run lint                             # ESLint
+npm run build                            # tsc + vite build
 ```
 
-Chế độ 2 qua dòng lệnh để trống cột Mật khẩu nếu không truyền `--password`.
-Khi truyền nhiều tệp qua dòng lệnh, mọi tệp dùng chung `--to-chuc`. Muốn mỗi
-tệp một Tổ chức riêng thì dùng giao diện. Dòng lệnh chế độ 1 vẫn nhận nhiều tệp
-để tương thích với cách gọi cũ.
+Sau khi sửa quy tắc trích xuất ở `core.py`/`mode2.py`, chạy thêm bảng hồi quy trên tệp thật:
+`py scripts/regression.py --detail` (đọc `test_data/`; tệp nào thiếu thì báo "BO QUA"). Số liệu chuẩn và các bẫy dữ liệu đã gặp
+nằm trong [`CLAUDE.md`](CLAUDE.md).
+
+## Triển khai
+
+Repo cố ý **không** có Dockerfile, docker compose, cấu hình Nginx, CI hay manifest Kubernetes: phần đóng gói và triển khai do chủ dự án
+tự làm. Mã được viết để triển khai thuận tay: backend cấu hình bằng biến môi trường, có `/api/health` làm healthcheck, và frontend
+build ra tệp tĩnh. Chi tiết và các giới hạn cần biết: [`docs/web.md`](docs/web.md).
+
+## Tài liệu khác
+
+| Tệp | Nội dung |
+|---|---|
+| [`docs/web.md`](docs/web.md) | Kiến trúc web, API, biến môi trường, hiệu năng, giới hạn |
+| [`frontend/README.md`](frontend/README.md) | Chạy/build frontend, cấu trúc mã giao diện |
+| [`DESIGN.md`](DESIGN.md) | Quy chuẩn thiết kế giao diện web |
+| [`CLAUDE.md`](CLAUDE.md) | Ghi chú kỹ thuật chi tiết, quy tắc nghiệp vụ đã chốt, bảng hồi quy |
+| [`legacy/README.md`](legacy/README.md) | Giao diện Tkinter bản cũ (không còn chạy được) |
