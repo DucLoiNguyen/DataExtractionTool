@@ -380,14 +380,19 @@ def _find_commune_in_text(text):
 
 # "(?<!cán )": "Cán bộ thường trực Trung tâm học tập cộng đồng" khong phai "Bộ" (cap tren xa).
 # "(?<!trụ )": "THCS Tiên Lữ - Trụ sở chính" khong phai "Sở" (cap tren xa).
-_ABOVE_COMMUNE_RE = re.compile(r"(?<!\w)(?:tỉnh|thành\s*phố|(?<!trụ )sở|(?<!cán )bộ|cục|tổng\s*cục)(?!\w)", re.IGNORECASE)
+# "(?<!đinh )": "Trường THCS Đinh Bộ Lĩnh" (ten nguoi) khong phai "Bộ".
+# "(?<!cơ )": "Trường Trung học cơ sở Đinh Bộ Lĩnh" khong phai "Sở" (EaHleo: 300 nguoi
+# truong hoc ghi day du "cơ sở" bi giu nguyen thay vi gop ve xa).
+_ABOVE_COMMUNE_RE = re.compile(r"(?<!\w)(?:tỉnh|thành\s*phố|(?<!trụ )(?<!cơ )sở|(?<!cán )(?<!đinh )bộ|cục|tổng\s*cục)(?!\w)", re.IGNORECASE)
 # Don vi KHONG thuoc cap xa (cap huyen cu, don vi nganh doc, doanh nghiep)
 # - khong tu gan vao xa ban hanh van ban khi o don vi khong ghi ten xa. Vd
 # van ban cua xa Nghia Do co the co "Bệnh viện Đa khoa huyện Bảo Yên", "Chi
 # nhánh Ngân hàng Chính sách xã hội" -> giu nguyen, khong doan la "Xã Nghĩa Đô".
 _NOT_COMMUNE_UNIT_RE = re.compile(
     r"(?<!\w)(?:huyện|quận|thị\s*xã|bệnh\s*viện|ngân\s*hàng|chi\s*nhánh|đại\s*học|cao\s*đẳng|"
-    r"kho\s*bạc|bảo\s*hiểm\s*xã\s*hội|chi\s*cục|điện\s*lực|bưu\s*điện|viettel|vnpt|công\s*ty)(?!\w)",
+    r"kho\s*bạc|bảo\s*hiểm\s*xã\s*hội|chi\s*cục|điện\s*lực|bưu\s*điện|viettel|vnpt|công\s*ty|"
+    # THPT/GDNN-GDTX thuoc So Giao duc, hop tac xa la doanh nghiep: khong suy ra xa tu co quan ban hanh
+    r"thpt|trung\s*học\s*phổ\s*thông|gdnn|gdtx|giáo\s*dục\s*(?:nghề\s*nghiệp|thường\s*xuyên)|hợp\s*tác\s*xã|htx)(?!\w)",
     re.IGNORECASE,
 )
 
@@ -737,6 +742,16 @@ def _find_source_columns(header_row):
             if kw in _norm_key(cell):
                 col_map["unit"] = idx
                 break
+    # Cot "Địa chỉ (Bộ/Tỉnh/Xã)" dạng "Đắk Lắk / Xã Ea Na" (EaHleo.xlsx): cho biết
+    # xa/phuong cua tung nguoi khi o Co quan chi ghi "Phòng Kinh tế", "UBND"...
+    # Khong nham voi cot "Dia chi email/thu" (da la cot email).
+    used = set(col_map.values()) | set(email_candidates)
+    for idx, cell in enumerate(header_row):
+        k = _norm_key(cell)
+        # bo cot "Loai dia chi" (gia tri chi la "Tinh/TP")
+        if idx not in used and "dia chi" in k and "loai" not in k:
+            col_map["addr"] = idx
+            break
     # Tieu de GOP O chia thanh 2 cot lien ke CUNG TEN (vd 2 cot "Cơ quan,
     # đơn vị công tác": cot 1 ghi bo phan "HĐND"/"Phòng VHXH", cot 2 ghi
     # "Xã Long Hòa") - danh dau cot thu 2 de GHEP gia tri, tranh mat phan
@@ -1531,6 +1546,9 @@ def _process_data_rows(data_rows, col_map, default_to_chuc, unit_cache, issues,
         raw_email = _cell_display(get_email_raw(row))
         raw_phone = get_display(row, "phone")
         raw_unit_from_col = get_display(row, "unit")
+        # Xa/phuong ghi o cot Dia chi cua RIENG dong nay (xem _find_source_columns).
+        addr_commune = _find_commune_in_text(get_display(row, "addr")) if "addr" in col_map else None
+        row_commune = addr_commune or doc_commune
         unit2 = get_display(row, "unit2") if "unit2" in col_map else ""
         if unit2 and _norm_key(unit2) != _norm_key(raw_unit_from_col):
             raw_unit_from_col = f"{raw_unit_from_col} {unit2}".strip() if raw_unit_from_col else unit2
@@ -1572,6 +1590,16 @@ def _process_data_rows(data_rows, col_map, default_to_chuc, unit_cache, issues,
             raw_unit = _unit_under_group(raw_unit_from_col, current_group)
         else:
             raw_unit = raw_unit_from_col
+        if not raw_unit and addr_commune:
+            raw_unit = addr_commune  # o Co quan trong nhung cot Dia chi ghi xa/phuong
+        elif addr_commune and raw_unit:
+            # Cot Dia chi la nguon ro rang ve xa/phuong (nguoi dung chon 16/10/2026):
+            # thong nhat ten xa ("M'Drắk" va "M’Drắk" la 1 xa) va sua o co quan doc
+            # nham ("MTTQ VN xã Kiêm chữ thập đỏ" o dia chi Xã Ea Ô -> "Kiêm").
+            own = _find_commune_in_text(raw_unit)
+            if own and own != addr_commune and not _ABOVE_COMMUNE_RE.search(raw_unit) \
+                    and not _NOT_COMMUNE_UNIT_RE.search(raw_unit):
+                raw_unit = addr_commune
         if not raw_unit and fallback_unit:
             # Khong co cot Don vi rieng tren tung dong (VA khong dung co
             # che nhom o tren) - dung Don vi trich tu phan van ban tu do
@@ -1601,7 +1629,7 @@ def _process_data_rows(data_rows, col_map, default_to_chuc, unit_cache, issues,
         phone = core.normalize_phone(get_raw(row, "phone"))
 
         # --- Ap dung 2 quy tac rieng cua file mau 2 ---
-        don_vi, to_chuc = _unit_lookup(unit_cache, raw_unit, default_to_chuc, doc_commune, doc_issuer)
+        don_vi, to_chuc = _unit_lookup(unit_cache, raw_unit, default_to_chuc, row_commune, doc_issuer)
 
         rec = {"stt": raw_stt, "name": name, "email": email, "phone": phone,
                "don_vi": don_vi, "to_chuc": to_chuc}

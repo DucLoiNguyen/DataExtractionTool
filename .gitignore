@@ -8,3 +8,6 @@ dist/
 .venv/
 # Du lieu that cua nguoi dung (chua thong tin ca nhan) - khong commit
 test_data/
+node_modules/
+frontend/dist/
+*.tsbuildinfo

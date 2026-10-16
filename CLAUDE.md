@@ -20,13 +20,15 @@ src/dataextraction/
   core.py                       # (trước là extract_contacts.py) Logic cốt lõi + Chế độ 1, dùng chung cả 2 chế độ
   mode2.py                      # (trước là process_template_v2.py) Logic Chế độ 2, `from . import core`
   gui.py                        # GUI Tkinter (python -m dataextraction)
-  web/app.py, web/static/       # web app FastAPI + 1 trang HTML (python -m dataextraction.web)
+  web/app.py                    # API FastAPI (python -m dataextraction.web); KHÔNG phục vụ giao diện
   templates/                    # cls_template_users.xlsx (Chế độ 1), TemplateV2.xlsx (Chế độ 2)
-tests/                          # pytest cho web app (python -m pytest)
+frontend/                       # giao diện web: Vite + React + TS + Tailwind (npm run dev), xem docs/web.md
+DESIGN.md                       # nguồn chuẩn giao diện web (màu, chữ, bố cục, chuyển động)
+tests/                          # pytest cho API web (python -m pytest)
 scripts/regression.py           # Bảng hồi quy mục 7 + kiểm tra đơn vị: python scripts/regression.py --detail
-docs/                           # web.md (web app), FIXING.md (ghi chú sửa lỗi cũ)
+docs/                           # web.md (kiến trúc web, API, cấu hình), FIXING.md (ghi chú sửa lỗi cũ)
 legacy/                         # gui_notion.py, guiv2.py: bản giao diện cũ, không còn chạy được sau khi chuyển package
-README.md                       # Hướng dẫn cho người dùng cuối
+README.md                       # Hướng dẫn người dùng cuối: cài đặt Windows, 3 cách chạy (Tkinter/web/CLI), quy tắc, lỗi thường gặp
 test_data/                      # File gốc của người dùng, tên ngắn (TaPhin.pdf...) — KHÔNG commit (.gitignore)
 ```
 
@@ -41,12 +43,23 @@ Phụ thuộc: `pip install -e .` (hoặc `pip install openpyxl python-docx pdfp
 Chạy:
 ```bash
 python3 gui.py                                   # giao diện
-python3 -m dataextraction.web                    # web app, http://127.0.0.1:8000 (cần pip install -e ".[web]")
+python3 -m dataextraction.web                    # API web, http://127.0.0.1:8000 (cần pip install -e ".[web]")
+(cd frontend && npm install && npm run dev)       # giao diện web, http://localhost:5173 (chuyển /api sang backend)
 python3 -m dataextraction.mode2 --input X.xlsx [Y.pdf ...] [--template ...] \
     --output kq.xlsx --to-chuc "Cần Thơ" [--password Copenai@2026] [--no-dedupe]
     # nhieu tep: gop 1 ket qua, dung chung --to-chuc
 python3 -m dataextraction.core ...               # CLI chế độ 1 (xem main())
 ```
+
+**Thoả thuận về web/DevOps (14/10/2026, người dùng chọn)**: web tách **frontend (`frontend/`) và backend (API)**, 1 repo. Người dùng **tự làm thủ công** mọi phần triển khai (Dockerfile, compose, Nginx, CI, Kubernetes...) để luyện DevOps: **đừng thêm các tệp đó** và đừng tự cấu hình triển khai; chỉ giữ code app triển khai được thuận tay (cấu hình qua biến môi trường, `/api/health`, README ghi cách build/chạy). Hiệu năng là yêu cầu quan trọng (xem "Hiệu năng" trong `docs/web.md`). Giao diện web theo `DESIGN.md` (phong cách dịu, độ dày thông tin cao, chuyển động vừa phải, chữ trên nền coral là `--on-accent` chứ không phải trắng).
+
+**Bản web — tóm tắt kiến trúc** (chi tiết: `docs/web.md`, `frontend/README.md`, `DESIGN.md`):
+- Backend `src/dataextraction/web/app.py` chỉ là API, luồng "tải lên 1 lần + việc nền": `POST /api/uploads` (trả `file_id`, danh sách sheet, gợi ý Tổ chức) → `POST /api/jobs` (202; body `{mode, sources:[{file_id, sheet, to_chuc}], dedupe, password}`) → hỏi `GET /api/jobs/{id}` (`running`/`done`/`error`) → `GET /api/download/{job_id}/{result|issues}`. Còn có `GET /api/health`, `GET /api/config`, `DELETE /api/uploads/{id}`. Việc nặng chạy trong `ThreadPoolExecutor(max_workers=1)` dưới khoá `_work_lock`; trạng thái nằm trong bộ nhớ nên **chỉ chạy được 1 bản backend**; dọn tệp/việc hết hạn bằng `_cleanup()`. Biến môi trường: `DATAEXTRACTION_MAX_UPLOAD_MB`, `DATAEXTRACTION_TTL_SECONDS`, `DATAEXTRACTION_WORK_DIR`. Không có DB, không có đăng nhập (dữ liệu là thông tin cá nhân: chỉ chạy nội bộ). Logic nghiệp vụ vẫn ở `core.py`/`mode2.py`, web không sửa chúng.
+- Frontend `frontend/`: Vite + React 19 + TypeScript + Tailwind v4 (token trong `src/index.css`), Radix, `@tanstack/react-table` **v8** (đừng nâng v9), `@tanstack/react-virtual` (bảng ~6000 dòng chỉ vẽ ~28 hàng DOM), Motion dùng `LazyMotion` + `m.*` và tôn trọng reduced-motion. Trình duyệt chỉ gọi đường dẫn tương đối `/api/...`; Vite dev proxy sang `http://127.0.0.1:8000` (đổi bằng `VITE_API_PROXY`). Kiểm tra: `npx tsc -b`, `npm run lint`, `npm test`, `npm run build`; backend: `python -m pytest` (15 test).
+- **Tương phản**: chữ trắng trên coral `#cc785c` chỉ đạt 3,28:1 nên nút chính/tab đang chọn/checkbox dùng `--on-accent: #181715`.
+- Windows chạy bản web: 2 cửa sổ PowerShell — backend trước (`py -m pip install -e ".[web]"` rồi `py -m dataextraction.web`), sau đó `npm run dev` trong `frontend/`. Lỗi hay gặp: `ECONNREFUSED 127.0.0.1:8000` = chưa bật backend; `No module named 'dataextraction'` = bản checkout cũ chưa có `src/dataextraction/web` hoặc chưa `pip install -e`. Bảng lỗi đầy đủ trong `README.md`.
+- Nhánh: mã web đã nằm trên `main`; các nhánh `claude/...` chỉ là nhánh làm việc tạm. Commit 61477c2 để lại `package-lock.json` rỗng ở thư mục gốc (không dùng, có thể xoá).
+
 
 ## 3. Hai chế độ
 
@@ -81,6 +94,8 @@ GUI (`gui.py`): 2 tab chế độ ở đầu trang; toàn bộ trang cuộn đư
 - **Email bị cắt giữa từ** (`_is_cut_mid_word`): người nhập gõ tiếng Việt có dấu trong email (`thươngpv.xaxuanhong@...`, `hoangminhhảo1992@gmail.com`); regex chỉ khớp phần đuôi (`ngpv.xaxuanhong@...`, `o1992@gmail.com`) → **loại** nếu ký tự ngay trước phần khớp là chữ/số (kể cả có dấu). `Email:abc@`, `(abc@` vẫn đúng. Đã soát từng dòng trên dữ liệu thật: mọi dòng đổi đều là email bị cắt thật. Đề xuất chưa làm: tự bỏ dấu (`thươngpv` → `thuongpv`) — nguy hiểm khi ký tự lạ do nhận dạng chữ (`ơlenganmau...`), chờ người dùng quyết.
 - **Dấu cách giữa 2 chữ/số trong TÊN MIỀN** (`dqchinh1@p htho.gov.vn`, `xuantv.ngocchien@sonla gov.vn`, `ldphuong2@cantho.gov.v n`): cùng loại với dấu cách trong phần tên → **loại** (nối liền ra `@phtho.gov.vn`, `@sonlagov.vn` — tên miền không tồn tại). Trước đây Chế độ 1/Excel nối liền âm thầm còn Chế độ 2 PDF/Word loại: nay nhất quán. Tác động ngày 13/10/2026: Sơn La −17 (`sonla gov.vn`, thực ra thiếu dấu chấm), Cần Thơ −1 (`v n` thực ra đúng `vn`), Hội Thịnh −1. Dấu cách sát `.` (`phutho. gov.vn`) vẫn bỏ. Tuỳ chọn chưa làm: tự sửa dấu cách thành dấu chấm (cứu được 17 người Sơn La) — chờ người dùng quyết.
 - **Tên miền gõ sai rõ ràng → tự sửa + cảnh báo** (`core.find_typo_domain_fixes` / `apply_typo_domain_fixes`, cả 2 chế độ, chạy **trước** bước tên miền cắt cụt và lọc trùng; người dùng chọn "tự sửa" ngày 14/10/2026). Hai luật, đều so với tên miền phổ biến **trong cùng tệp**: (1) tất định cho tên miền cơ quan — `<đầu>.<goc|gv|gob...>.<tld>` hoặc `.gov.<tld khác vn>` (`tphcm.gov.com`, `laocai.goc.vn`, `.gov.vnv`) mà tệp có `<đầu>.gov.vn` ≥ 3 lần và nhiều gấp ≥ 5; (2) thống kê — cách tên miền phổ biến (≥ 10 lần, nhiều gấp ≥ 5) **đúng 1 ký tự** (`phuttho.edu.vn`, `phutho.eedu.vn`, `vinhphucedu.vn`, `pthutho.gov.vn`), nhãn đầu ≥ 5 ký tự (tránh nhầm `ctu`/`cmu.edu.vn`). Không đoán khi tệp không có tên miền đúng phổ biến (`@iclord.com` → để nguyên; không thêm `icloud` vào `_fix_gmail_domain`). Cảnh báo ghi "Đã sửa tên miền email gõ sai ở N dòng: @X → @Y (STT ...)". Sửa xong có thể sinh thêm dòng "Trùng email" (TienLu STT 291 trùng STT 169 — cùng người, đúng).
+- **Tiêu đề email lạ "Tài khoản đăng nhập"** (XuanLanh.xlsx, Đắk Lắk): đã thêm từ khoá `tai khoan dang nhap` vào email. Trước đó Chế độ 2 ra 0/44 (không nhận ra cột email) và Chế độ 1 đọc tiêu đề + 7 dòng bảng vai trò phía trên làm "dữ liệu" (báo 8 dòng loại oan). Sau sửa: Chế độ 1 44 đọc / 43 KQ; Chế độ 2 43 KQ, 1 CKT (STT 42 Nguyễn Phi Hùng trùng STT 29), 6 đơn vị (`Xã Xuân Lãnh - Đắk Lắk` 8, ...), không có SĐT (nguồn không có cột SĐT).
+- **Tên miền gõ sai: không tự sửa khi chỉ khác 1 ký tự thay thế ở tên miền `.vn`** (EaHleo.xlsx, Đắk Lắk 12.578 dòng, 5 giây): `@eakar.daklak.gov.vn` (2 người ở xã Ea Ô, Cư Yang — huyện Ea Kar cũ, tên miền thật) từng bị sửa nhầm thành `@eakao.daklak.gov.vn` (phường Ea Kao, 72 người) vì cách 1 ký tự. Nay luật thống kê chỉ sửa khi **thừa/thiếu** ký tự (`dalak`→`daklak`, `eedu`→`edu`); thay ký tự chỉ sửa với tên miền không `.vn` (`gmaii`/`hmail`→`gmail.com`). Hệ quả: `@phuuen.edu.vn` (thay `y` bằng `u`) giữ nguyên, người dùng tự đối chiếu.
 - Không có email → loại (lý do "Thiếu email"). Email là trường bắt buộc duy nhất.
 - Có thể có 2 cột email (vd "Thư điện tử công vụ" + "Thư điện tử Gmail"): dùng cột 2 (`email_alt`) khi cột 1 trống.
 
@@ -94,6 +109,8 @@ GUI (`gui.py`): 2 tab chế độ ở đầu trang; toàn bộ trang cuộn đư
 
 **Đơn vị** (Chế độ 2, `v2.normalize_don_vi`)
 - **Đơn vị cấp dưới xã/phường gộp thành chính xã/phường đó** (yêu cầu của người dùng): phòng ban, trường học, trạm y tế, đoàn thể, thôn/tổ dân phố... → `Xã/Phường/Thị trấn <Tên> - <tỉnh>`. Ví dụ `Phòng VH- XH Phường Nam Định` → `Phường Nam Định - Ninh Bình`; `Văn phòng Đảng ủy xã Tả Phìn` → `Xã Tả Phìn - Lào Cai`. Tên xã lấy từ chính ô đơn vị (`_find_commune_in_text`: lấy lần xuất hiện cuối có tên, nhưng bỏ qua từ khoá nằm **trong** tên vừa tìm — `Phường Xã Đàn` giữ nguyên; bỏ "xã hội", "xã viên"; bỏ khi từ đứng trước là `thị` (thị xã = cấp huyện cũ), `tác` (hợp tác xã), `các`/`cấp`; "XÃ/PHƯỜNG" viết hoa thì tên cũng phải viết hoa; **cả ô viết thường** (`phòng vh xã nam định`) thì nhận tên viết thường, tối đa 5 từ, dừng ở huyện/quận/tỉnh/thành phố; dừng ở `-`, `,`, `/`, `(`). Ô không ghi tên xã ("Văn phòng Đảng ủy", "Phòng kinh tế", "Hội nông dân Việt Nam xã") → dùng xã/phường của **cơ quan ban hành** ở đầu văn bản (`_find_doc_commune`: trang đầu PDF, bảng quốc hiệu + đoạn mở đầu Word, các dòng trên bảng Excel), trừ khi ô chứa dấu hiệu cấp cao hơn (`_ABOVE_COMMUNE_RE`: tỉnh, thành phố, Sở, Bộ, Cục; **"Cán bộ" không phải "Bộ"**) hoặc đơn vị không thuộc xã (`_NOT_COMMUNE_UNIT_RE`: huyện, quận, thị xã, bệnh viện, ngân hàng, chi nhánh, đại học, cao đẳng, kho bạc, BHXH, chi cục, điện lực, bưu điện, công ty...) — vd văn bản xã Nghĩa Đô có "Bệnh viện Đa khoa huyện Bảo Yên" thì giữ nguyên, không đoán là xã. Không có tên xã ở đâu cả (vd Bến Cát, chỉ có trong tên file/email) → giữ nguyên, không suy đoán.
+- - **Không suy xã từ cơ quan ban hành cho THPT, GDNN-GDTX, hợp tác xã** (16/10/2026, chấm điểm logic gộp: 22/26 → 25/26): các đơn vị này thuộc Sở hoặc là doanh nghiệp, đã thêm vào `_NOT_COMMUNE_UNIT_RE`; nếu ô tự ghi tên xã thì vẫn gộp như thường.
+**Cột "Địa chỉ" ghi xã/phường của từng người** (`_find_source_columns` → `col_map["addr"]`, người dùng chọn "gộp về xã" 16/10/2026; EaHleo.xlsx Đắk Lắk, địa chỉ dạng `Đắk Lắk / Xã Ea Na`; bỏ cột "Loại địa chỉ"): xã/phường này dùng như xã ban hành **riêng cho từng dòng**: ô Cơ quan không ghi xã ("Phòng Kinh tế", "UBND", "Trạm Y tế", trường học) → gộp về xã đó; ô Cơ quan trống → đơn vị = xã; ô có tên xã **khác** địa chỉ (đọc nhầm `MTTQ VN xã Kiêm chữ thập đỏ`, hoặc khác dấu nháy `M'Drắk`/`M’Drắk`) → lấy theo địa chỉ; Sở/tỉnh/Bộ/Cục và `_NOT_COMMUNE_UNIT_RE` giữ nguyên. Kết quả EaHleo: 535 → 216 đơn vị, 0 dòng xã lệch địa chỉ; 146 người ô Cơ quan trống và địa chỉ chỉ ghi `Đắk Lắk` vẫn để trống đơn vị (nguồn thiếu). Sửa kèm: `_ABOVE_COMMUNE_RE` không coi `cơ sở` ("Trường Trung học cơ sở") là Sở và `Đinh Bộ Lĩnh` là Bộ. Chỉ áp dụng đường đọc Excel/CSV có tiêu đề (`_process_data_rows`).
 - Đơn vị cấp xã trở lên (Sở, Viện, Ban QLDA...): dạng `<cấp hành chính> <tên riêng> - <tỉnh/thành>`: `UBND phường Ninh Kiều` → `Phường Ninh Kiều - Cần Thơ`; `Sở Tư pháp` → `Sở Tư pháp - Cần Thơ`. Bỏ tiền tố UBND/HĐND trước Xã/Phường/Thị trấn.
 - Mở rộng viết tắt: `TT` → Trung tâm, `TP.` → Thành phố, `CĐCĐ`, `QLDA`...
 - **Luôn thêm hậu tố tỉnh/thành**, kể cả khi tên đã chứa tên tỉnh (ra `... Thành phố Cần Thơ - Cần Thơ`). Người dùng chưa yêu cầu bỏ phần lặp này; đừng tự đổi.

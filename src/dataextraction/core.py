@@ -120,6 +120,8 @@ HEADER_KEYWORDS = {
         "email", "e-mail", "mail",
         "thu dien tu", "hop thu dien tu", "dia chi email", "dia chi mail",
         "thu cong vu", "dia chi thu",
+        # Xuan Lanh (Dak Lak): cot email ghi "Tài khoản đăng nhập"
+        "tai khoan dang nhap",
     ],
     # "so dt" (Lam Thao: "Số ĐT sử dụng Zalo"), "zalo", "dien loai" (Tan Hoa go
     # sai "Điện loại liên hệ" thay "Điện thoại liên hệ").
@@ -2268,7 +2270,16 @@ def find_typo_domain_fixes(emails):
         for D, N in doms.items():
             if D == d or N < 10 or N < 5 * n or len(D.split(".")[0]) < _TYPO_MIN_FIRST_LABEL:
                 continue
-            if _edit_distance_le1(d, D) and (best is None or N > doms[best]):
+            if not _edit_distance_le1(d, D):
+                continue
+            # Thay 1 ky tu (cung do dai, khong phai doi cho 2 ky tu ke nhau) o ten
+            # mien .vn co the la 2 co quan THAT khac nhau: Dak Lak '@eakar.daklak.
+            # gov.vn' (huyen Ea Kar cu, Ea O/Cu Yang) bi sua nham thanh '@eakao.'
+            # (phuong Ea Kao). Chi tu sua thay ky tu voi ten mien khong .vn
+            # (gmail.com...); ten mien .vn chi sua khi thieu/thua/doi cho ky tu.
+            if len(d) == len(D) and D.endswith(".vn") and sum(a != b for a, b in zip(d, D)) == 1:
+                continue
+            if best is None or N > doms[best]:
                 best = D
         if best:
             fixes[d] = best
