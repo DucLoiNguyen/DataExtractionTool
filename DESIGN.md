@@ -33,11 +33,11 @@ Nguồn chuẩn cho giao diện web (`frontend/`). Khi mã và tệp này khác 
 - Mọi chuỗi hiển thị là **tiếng Việt có dấu**. Không emoji trong nút/thẻ/tab; dùng biểu tượng nét mảnh (lucide-react, nét 1.75).
 
 ## 4. Bố cục
-- Thanh nội dung tối đa 1180px, lề 16px (mobile) / 24px (≥ 768px). Một cột, các thẻ xếp dọc: **Chọn tệp → Tuỳ chọn → Kết quả**.
+- Thanh nội dung tối đa 1280px, lề 16px (mobile) / 24px (≥ 768px). **Hai khung** (≥ 1024px): trái 380px cố định (dính khi cuộn) gồm chế độ, vùng thả tệp + danh sách nguồn, Tuỳ chọn (thu gọn), nút Trích xuất; phải là kết quả (trống: 3 bước hướng dẫn; đang chạy: thanh tiến độ + số giây; xong: nút tải, dải thống kê, bảng). Dưới 1024px xếp dọc, kết quả nằm dưới và tự cuộn tới khi xong.
 - Thẻ: nền `--surface`, viền 1px `--border`, bo góc 12px, đệm 16px, không đổ bóng (chỉ thẻ nổi như menu mới có bóng nhẹ).
 - Khoảng cách theo bậc 4/8/12/16/24. Giữa các thẻ 16px.
 - Bảng dữ liệu: hàng cao 36px, tiêu đề dính trên cùng, **ảo hoá hàng** (chỉ vẽ hàng đang thấy), cuộn trong khung cao tối đa 520px. Không phân trang.
-- Responsive: ≥ 768px bảng nguồn hiện đủ cột; dưới đó mỗi nguồn là một thẻ xếp dọc. Không cuộn ngang toàn trang.
+- Mỗi nguồn là một thẻ xếp dọc (tên tệp › sheet, số email, Bỏ/Dùng sheet, Xoá, ô Tổ chức). Không cuộn ngang toàn trang; tên tệp dài phải xuống dòng.
 
 ## 5. Thành phần
 - **Nút chính** (Trích xuất): nền `--accent`, chữ `--on-accent`, bo 8px, cao 36px. Hover `--accent-strong`. Khi đang chạy: biểu tượng xoay + chữ "Đang trích xuất…", không cho bấm lại.

@@ -107,7 +107,7 @@ function TableInner({ columns, rows }: Omit<Props, 'resetKey'>) {
         </span>
       </div>
 
-      <div ref={scrollRef} className="max-h-[520px] overflow-auto rounded-lg border border-border" role="table">
+      <div ref={scrollRef} className="max-h-[520px] overflow-auto lg:max-h-[calc(100vh-18rem)] rounded-lg border border-border" role="table">
         <div style={{ minWidth }} role="rowgroup">
           {table.getHeaderGroups().map((hg) => (
             <div

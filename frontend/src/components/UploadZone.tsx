@@ -44,7 +44,7 @@ export function UploadZone({ multiple, hint, busy, onFiles }: Props) {
       onDragLeave={() => setOver(false)}
       onDrop={onDrop}
       className={cn(
-        'flex cursor-pointer flex-col items-center gap-1.5 rounded-xl border-2 border-dashed border-border px-4 py-6 text-center text-muted',
+        'flex cursor-pointer flex-col items-center gap-1.5 rounded-xl border-2 border-dashed border-border px-4 py-5 text-center text-muted',
         'transition-colors duration-150 hover:border-accent/60 motion-reduce:transition-none',
         over && 'border-accent bg-accent/10',
       )}

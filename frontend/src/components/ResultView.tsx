@@ -59,6 +59,22 @@ export function ResultView({ result }: { result: ExtractResult }) {
       aria-label="Kết quả trích xuất"
     >
       <div className="rounded-xl border border-border bg-surface p-4">
+        <div className="mb-3 flex flex-wrap gap-2">
+          <Button asChild variant="ink">
+            <a href={api.downloadUrl(result.job_id, 'result')} download>
+              <Download className="size-4" aria-hidden />
+              Tải tệp kết quả (.xlsx)
+            </a>
+          </Button>
+          {result.has_issues_file && (
+            <Button asChild>
+              <a href={api.downloadUrl(result.job_id, 'issues')} download>
+                <Download className="size-4" aria-hidden />
+                Tải danh sách cần kiểm tra (.xlsx)
+              </a>
+            </Button>
+          )}
+        </div>
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1" aria-live="polite">
           <span>{fmt(s.total_read)} dòng đọc được</span>
           <span className="text-muted" aria-hidden>→</span>
@@ -76,36 +92,21 @@ export function ResultView({ result }: { result: ExtractResult }) {
         {warnings.map((w, i) => (
           <div key={i} className="mt-2 flex items-start gap-2 rounded-lg bg-warn-bg px-3 py-2 text-sm text-warn">
             <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden />
-            <span>{w}</span>
+            <span className="min-w-0 break-words">{w}</span>
           </div>
         ))}
 
-        <div className="mt-4 flex flex-wrap gap-2">
-          <Button asChild variant="ink">
-            <a href={api.downloadUrl(result.job_id, 'result')} download>
-              <Download className="size-4" aria-hidden />
-              Tải tệp kết quả (.xlsx)
-            </a>
-          </Button>
-          {result.has_issues_file && (
-            <Button asChild>
-              <a href={api.downloadUrl(result.job_id, 'issues')} download>
-                <Download className="size-4" aria-hidden />
-                Tải danh sách cần kiểm tra (.xlsx)
-              </a>
-            </Button>
-          )}
-        </div>
       </div>
 
       <div className="rounded-xl border border-border bg-surface p-4">
         <Tabs value={tab} onValueChange={(v) => setTab(v as 'prev' | 'iss')}>
           <TabsList className="mb-3 gap-1">
-            <TabsTrigger value="prev" className="py-1.5">
+            <TabsTrigger value="prev" className="whitespace-nowrap py-1.5">
               Xem trước ({fmt(result.records.length)})
             </TabsTrigger>
-            <TabsTrigger value="iss" className="py-1.5">
+            <TabsTrigger value="iss" className="gap-1.5 whitespace-nowrap py-1.5">
               Cần kiểm tra ({fmt(result.issues.length)})
+              {result.issues.length > 0 && <AlertTriangle className="size-3.5" aria-hidden />}
             </TabsTrigger>
           </TabsList>
         </Tabs>

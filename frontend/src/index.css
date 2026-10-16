@@ -70,3 +70,8 @@ body {
 }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 ::selection { background: color-mix(in srgb, var(--accent) 30%, transparent); }
+
+@keyframes slide {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(300%); }
+}

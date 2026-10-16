@@ -17,7 +17,7 @@ export function SourceList({ mode, sources, onChange, onRemove }: Props) {
   if (!sources.length) return null
   const m2 = mode === 'mode2'
   return (
-    <ul className="mt-4 flex flex-col gap-2" aria-label="Danh sách nguồn">
+    <ul className="mt-3 flex flex-col gap-2" aria-label="Danh sách nguồn">
       <AnimatePresence initial={false}>
         {sources.map((s) => (
           <m.li
@@ -26,24 +26,34 @@ export function SourceList({ mode, sources, onChange, onRemove }: Props) {
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.18, ease: 'easeOut' }}
-            className="grid items-center gap-x-3 gap-y-2 rounded-lg border border-border bg-surface-2/50 px-3 py-2 md:grid-cols-[minmax(0,1fr)_auto_minmax(0,16rem)_auto]"
+            className="rounded-lg border border-border bg-surface-2/50 px-3 py-2"
           >
-            <div className="min-w-0">
-              <div className={cn('truncate', s.skip && 'text-muted line-through')} title={s.fileName}>
-                {s.fileName}
-                {s.sheet != null && <span className="text-muted"> › {s.sheet}</span>}
-              </div>
-              {s.skip && (
-                <div className="text-[13px] text-muted">
-                  Bỏ qua: trùng {fmt(s.overlap)}/{fmt(s.emails ?? 0)} email với sheet trước
+            <div className="flex items-start gap-2">
+              <div className="min-w-0 flex-1">
+                <div className={cn('truncate', s.skip && 'text-muted line-through')} title={s.fileName}>
+                  {s.fileName}
+                  {s.sheet != null && <span className="text-muted"> › {s.sheet}</span>}
                 </div>
+                <div className="text-[13px] text-muted">
+                  {s.skip
+                    ? `Bỏ qua: trùng ${fmt(s.overlap)}/${fmt(s.emails ?? 0)} email với sheet trước`
+                    : m2 && s.emails != null
+                      ? `${fmt(s.emails)} email`
+                      : null}
+                </div>
+              </div>
+              {m2 && s.sheet != null && (
+                <Button size="sm" onClick={() => onChange(s.key, { skip: !s.skip })}>
+                  {s.skip ? 'Dùng sheet' : 'Bỏ sheet'}
+                </Button>
               )}
+              <Button size="sm" variant="ghost" className="px-2" aria-label={`Xoá ${s.fileName}`} onClick={() => onRemove(s.key)}>
+                <X className="size-4" aria-hidden />
+              </Button>
             </div>
             {m2 && (
-              <span className="text-[13px] text-muted">{s.emails == null ? '—' : `${fmt(s.emails)} email`}</span>
-            )}
-            {m2 && (
               <Input
+                className="mt-2"
                 value={s.toChuc}
                 disabled={s.skip}
                 placeholder="Tổ chức mặc định"
@@ -51,17 +61,6 @@ export function SourceList({ mode, sources, onChange, onRemove }: Props) {
                 onChange={(e) => onChange(s.key, { toChuc: e.target.value })}
               />
             )}
-            <div className={cn('flex items-center gap-1.5', !m2 && 'md:col-start-4')}>
-              {m2 && s.sheet != null && (
-                <Button size="sm" onClick={() => onChange(s.key, { skip: !s.skip })}>
-                  {s.skip ? 'Dùng sheet' : 'Bỏ sheet'}
-                </Button>
-              )}
-              <Button size="sm" variant="ghost" aria-label={`Xoá ${s.fileName}`} onClick={() => onRemove(s.key)}>
-                <X className="size-4" aria-hidden />
-                Xoá
-              </Button>
-            </div>
           </m.li>
         ))}
       </AnimatePresence>

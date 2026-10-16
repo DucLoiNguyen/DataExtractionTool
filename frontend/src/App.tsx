@@ -1,6 +1,7 @@
 import { AnimatePresence } from 'motion/react'
-import { AlertCircle, Loader2, Play } from 'lucide-react'
+import { AlertCircle, ChevronDown, Loader2, Play } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { EmptyState, RunningCard } from '@/components/Placeholders'
 import { ResultView } from '@/components/ResultView'
 import { SourceList } from '@/components/SourceList'
 import { UploadZone } from '@/components/UploadZone'
@@ -11,9 +12,14 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { api, waitForJob } from '@/lib/api'
 import type { ExtractResult, Mode, SourceRow, UploadResponse } from '@/lib/types'
 
+const MODE_DESC: Record<Mode, string> = {
+  mode1: 'Trích Họ tên, Email, SĐT. Mỗi lần 1 tệp.',
+  mode2: 'Thêm Đơn vị và Tổ chức. Nhiều tệp, Excel tách theo sheet.',
+}
+
 const HINTS: Record<Mode, string> = {
-  mode1: 'Chế độ 1 xử lý 1 tệp mỗi lần · PDF, Word (.docx/.doc), Excel (.xlsx/.xls), CSV',
-  mode2: 'Có thể chọn nhiều tệp; tệp Excel nhiều sheet được tách theo sheet · PDF, Word, Excel, CSV',
+  mode1: 'PDF, Word (.docx/.doc), Excel (.xlsx/.xls), CSV',
+  mode2: 'Chọn được nhiều tệp · PDF, Word, Excel, CSV',
 }
 
 function rowsFromUpload(up: UploadResponse, mode: Mode, toChuc: string): SourceRow[] {
@@ -41,12 +47,28 @@ export default function App() {
   const [bulk, setBulk] = useState('')
   const [password, setPassword] = useState('')
   const [dedupe, setDedupe] = useState(true)
+  const [elapsed, setElapsed] = useState(0)
   const abortRef = useRef<AbortController | null>(null)
+  const resultRef = useRef<HTMLElement>(null)
 
   useEffect(() => {
     api.config().then((c) => setPassword(c.default_password)).catch(() => undefined)
     return () => abortRef.current?.abort()
   }, [])
+
+  useEffect(() => {
+    if (!running) return
+    setElapsed(0)
+    const t = setInterval(() => setElapsed((n) => n + 1), 1000)
+    return () => clearInterval(t)
+  }, [running])
+
+  useEffect(() => {
+    // man hinh hep: ket qua nam duoi cung, tu cuon xuong khi co ket qua
+    if (result && window.matchMedia('(max-width: 1023px)').matches) {
+      resultRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }
+  }, [result])
 
   const discard = useCallback((rows: SourceRow[]) => {
     for (const id of new Set(rows.map((r) => r.fileId))) void api.deleteUpload(id)
@@ -126,7 +148,7 @@ export default function App() {
   }
 
   return (
-    <div className="mx-auto max-w-[1180px] px-4 pb-16 pt-6 md:px-6">
+    <div className="mx-auto max-w-[1280px] px-4 pb-16 pt-6 md:px-6">
       <header className="mb-5">
         <h1 className="m-0 font-serif text-3xl font-normal">Tạo danh sách tài khoản</h1>
         <p className="mt-1 text-muted">
@@ -134,64 +156,82 @@ export default function App() {
         </p>
       </header>
 
-      <Tabs value={mode} onValueChange={(v) => changeMode(v as Mode)} className="mb-4">
-        <TabsList aria-label="Chế độ">
-          <TabsTrigger value="mode1">Chế độ 1 · Tên, Email, SĐT</TabsTrigger>
-          <TabsTrigger value="mode2">Chế độ 2 · Thêm Đơn vị / Tổ chức</TabsTrigger>
-        </TabsList>
-      </Tabs>
+      <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-[380px_minmax(0,1fr)]">
+        <aside className="flex flex-col gap-3 lg:sticky lg:top-4" aria-label="Nguồn và tuỳ chọn">
+          <Tabs value={mode} onValueChange={(v) => changeMode(v as Mode)}>
+            <TabsList aria-label="Chế độ" className="w-full">
+              <TabsTrigger value="mode1" className="flex-1">Chế độ 1</TabsTrigger>
+              <TabsTrigger value="mode2" className="flex-1">Chế độ 2</TabsTrigger>
+            </TabsList>
+          </Tabs>
+          <p className="-mt-1 text-[13px] text-muted">{MODE_DESC[mode]}</p>
 
-      <section className="mb-4 rounded-xl border border-border bg-surface p-4" aria-labelledby="h-src">
-        <h2 id="h-src" className="mb-2.5 text-[15px] font-semibold">1. Chọn tệp nguồn</h2>
-        <UploadZone multiple={mode === 'mode2'} hint={HINTS[mode]} busy={uploading > 0} onFiles={addFiles} />
-        <SourceList mode={mode} sources={sources} onChange={patchSource} onRemove={removeSource} />
-        {mode === 'mode2' && sources.length > 0 && (
-          <div className="mt-4 flex flex-wrap items-end gap-2">
-            <label className="min-w-52 flex-1 text-[13px] text-muted">
-              Gán Tổ chức mặc định cho tất cả nguồn
-              <Input
-                className="mt-1 text-text"
-                value={bulk}
-                placeholder="vd: Cần Thơ, Lào Cai, Viện Năng lượng nguyên tử Việt Nam"
-                onChange={(e) => setBulk(e.target.value)}
-              />
-            </label>
-            <Button onClick={applyBulk}>Gán</Button>
-          </div>
-        )}
-      </section>
+          <section className="rounded-xl border border-border bg-surface p-3" aria-label="Tệp nguồn">
+            <UploadZone multiple={mode === 'mode2'} hint={HINTS[mode]} busy={uploading > 0} onFiles={addFiles} />
+            <SourceList mode={mode} sources={sources} onChange={patchSource} onRemove={removeSource} />
+            {mode === 'mode2' && sources.length > 1 && (
+              <div className="mt-3 flex items-end gap-2">
+                <label className="min-w-0 flex-1 text-[13px] text-muted">
+                  Gán Tổ chức cho tất cả nguồn
+                  <Input
+                    className="mt-1 text-text"
+                    value={bulk}
+                    placeholder="vd: Cần Thơ, Lào Cai"
+                    onChange={(e) => setBulk(e.target.value)}
+                  />
+                </label>
+                <Button onClick={applyBulk}>Gán</Button>
+              </div>
+            )}
+          </section>
 
-      <section className="mb-4 rounded-xl border border-border bg-surface p-4" aria-labelledby="h-opt">
-        <h2 id="h-opt" className="mb-2.5 text-[15px] font-semibold">2. Tuỳ chọn</h2>
-        <div className="flex flex-wrap items-end gap-4">
-          <label className="min-w-52 flex-1 text-[13px] text-muted">
-            Mật khẩu mặc định
-            <Input className="mt-1 text-text" value={password} onChange={(e) => setPassword(e.target.value)} />
-          </label>
-          <label className="flex h-9 cursor-pointer items-center gap-2 text-text">
-            <Checkbox checked={dedupe} onCheckedChange={(c) => setDedupe(c === true)} aria-label="Lọc trùng email" />
-            Lọc trùng email
-          </label>
-          <Button variant="primary" onClick={run} disabled={running || uploading > 0 || active.length === 0}>
+          <details className="group rounded-xl border border-border bg-surface px-3 py-2.5">
+            <summary className="flex cursor-pointer list-none items-center justify-between text-[14px] font-medium [&::-webkit-details-marker]:hidden">
+              Tuỳ chọn
+              <span className="flex items-center gap-1 text-[13px] font-normal text-muted">
+                {dedupe ? 'Lọc trùng email' : 'Không lọc trùng'}
+                <ChevronDown className="size-4 transition-transform group-open:rotate-180 motion-reduce:transition-none" aria-hidden />
+              </span>
+            </summary>
+            <div className="mt-3 flex flex-col gap-3">
+              <label className="text-[13px] text-muted">
+                Mật khẩu mặc định
+                <Input className="mt-1 text-text" value={password} onChange={(e) => setPassword(e.target.value)} />
+              </label>
+              <label className="flex cursor-pointer items-center gap-2 text-text">
+                <Checkbox checked={dedupe} onCheckedChange={(c) => setDedupe(c === true)} aria-label="Lọc trùng email" />
+                Lọc trùng email
+              </label>
+            </div>
+          </details>
+
+          <Button variant="primary" className="h-10 w-full" onClick={run} disabled={running || uploading > 0 || active.length === 0}>
             {running ? <Loader2 className="size-4 animate-spin motion-reduce:animate-none" aria-hidden /> : <Play className="size-4" aria-hidden />}
-            {running ? 'Đang trích xuất…' : 'Trích xuất'}
+            {running ? 'Đang trích xuất…' : active.length > 1 ? `Trích xuất ${active.length} nguồn` : 'Trích xuất'}
           </Button>
-        </div>
-        <div className="mt-2 min-h-5 text-[13px] text-muted" aria-live="polite">
-          {uploading > 0 && 'Đang đọc tệp…'}
-          {running && 'Đang trích xuất… (PDF lớn có thể mất vài chục giây)'}
-          {!running && uploading === 0 && result && 'Hoàn tất trích xuất.'}
-        </div>
-      </section>
+          <div className="min-h-5 text-[13px] text-muted" aria-live="polite">
+            {uploading > 0 && 'Đang đọc tệp…'}
+          </div>
+        </aside>
 
-      {errors.map((msg, i) => (
-        <div key={i} role="alert" className="mb-3 flex items-start gap-2 whitespace-pre-wrap rounded-lg bg-danger-bg px-3 py-2.5 text-sm text-danger">
-          <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden />
-          <span>{msg}</span>
-        </div>
-      ))}
-
-      <AnimatePresence>{result && <ResultView key={result.job_id} result={result} />}</AnimatePresence>
+        <main ref={resultRef} className="min-w-0 scroll-mt-4" aria-label="Kết quả">
+          {errors.map((msg, i) => (
+            <div key={i} role="alert" className="mb-3 flex items-start gap-2 whitespace-pre-wrap rounded-lg bg-danger-bg px-3 py-2.5 text-sm text-danger">
+              <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden />
+              <span className="min-w-0 break-words">{msg}</span>
+            </div>
+          ))}
+          <AnimatePresence mode="wait">
+            {result ? (
+              <ResultView key={result.job_id} result={result} />
+            ) : running ? (
+              <RunningCard key="running" elapsed={elapsed} sources={active.length} />
+            ) : (
+              <EmptyState key="empty" />
+            )}
+          </AnimatePresence>
+        </main>
+      </div>
     </div>
   )
 }
