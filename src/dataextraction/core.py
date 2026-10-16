@@ -120,6 +120,8 @@ HEADER_KEYWORDS = {
         "email", "e-mail", "mail",
         "thu dien tu", "hop thu dien tu", "dia chi email", "dia chi mail",
         "thu cong vu", "dia chi thu",
+        # Xuan Lanh (Dak Lak): cot email ghi "Tài khoản đăng nhập"
+        "tai khoan dang nhap",
     ],
     # "so dt" (Lam Thao: "Số ĐT sử dụng Zalo"), "zalo", "dien loai" (Tan Hoa go
     # sai "Điện loại liên hệ" thay "Điện thoại liên hệ").
