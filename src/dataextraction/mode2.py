@@ -390,7 +390,9 @@ _ABOVE_COMMUNE_RE = re.compile(r"(?<!\w)(?:tỉnh|thành\s*phố|(?<!trụ )(?<!
 # nhánh Ngân hàng Chính sách xã hội" -> giu nguyen, khong doan la "Xã Nghĩa Đô".
 _NOT_COMMUNE_UNIT_RE = re.compile(
     r"(?<!\w)(?:huyện|quận|thị\s*xã|bệnh\s*viện|ngân\s*hàng|chi\s*nhánh|đại\s*học|cao\s*đẳng|"
-    r"kho\s*bạc|bảo\s*hiểm\s*xã\s*hội|chi\s*cục|điện\s*lực|bưu\s*điện|viettel|vnpt|công\s*ty)(?!\w)",
+    r"kho\s*bạc|bảo\s*hiểm\s*xã\s*hội|chi\s*cục|điện\s*lực|bưu\s*điện|viettel|vnpt|công\s*ty|"
+    # THPT/GDNN-GDTX thuoc So Giao duc, hop tac xa la doanh nghiep: khong suy ra xa tu co quan ban hanh
+    r"thpt|trung\s*học\s*phổ\s*thông|gdnn|gdtx|giáo\s*dục\s*(?:nghề\s*nghiệp|thường\s*xuyên)|hợp\s*tác\s*xã|htx)(?!\w)",
     re.IGNORECASE,
 )
 
