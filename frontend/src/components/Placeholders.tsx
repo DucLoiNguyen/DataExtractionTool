@@ -31,15 +31,43 @@ export function EmptyState() {
   )
 }
 
-export function RunningCard({ elapsed, sources }: { elapsed: number; sources: number }) {
+/** Phan tram: so nguon da xong that + uoc luong cho nguon dang doc (tiem can, khong bao gio cham muc ke tiep). */
+export function estimatePercent(done: number, total: number, elapsed: number): number {
+  const slice = 1 / Math.max(total, 1)
+  const creep = 0.95 * (1 - Math.exp(-elapsed / 8))
+  return Math.min(99, Math.round((done / Math.max(total, 1) + creep * slice) * 100))
+}
+
+export function RunningCard({
+  elapsed,
+  sources,
+  progress,
+}: {
+  elapsed: number
+  sources: number
+  progress: { done: number; total: number } | null
+}) {
+  const total = progress?.total ?? Math.max(sources, 1)
+  const done = progress?.done ?? 0
+  const pct = estimatePercent(done, total, elapsed)
   return (
     <m.section {...fade} className="rounded-xl border border-border bg-surface p-6" aria-live="polite">
-      <h2 className="m-0 text-[15px] font-semibold">Đang trích xuất {sources > 1 ? `${sources} nguồn` : 'tệp'}…</h2>
+      <div className="flex items-baseline justify-between gap-3">
+        <h2 className="m-0 text-[15px] font-semibold">Đang trích xuất {sources > 1 ? `${sources} nguồn` : 'tệp'}…</h2>
+        <span className="font-serif text-2xl tabular-nums">{pct}%</span>
+      </div>
       <p className="mb-4 mt-1 text-[13px] text-muted">
-        Đã chạy {elapsed} giây. PDF lớn có thể mất vài chục giây, bạn có thể để trang này mở.
+        {total > 1 ? `Đã xong ${done}/${total} nguồn · ` : ''}Đã chạy {elapsed} giây. PDF lớn có thể mất vài chục giây, bạn có thể để trang này mở.
       </p>
-      <div className="h-1.5 overflow-hidden rounded-full bg-surface-2" role="progressbar" aria-label="Đang xử lý">
-        <div className="h-full w-1/3 rounded-full bg-accent motion-safe:animate-[slide_1.4s_ease-in-out_infinite]" />
+      <div
+        className="h-1.5 overflow-hidden rounded-full bg-surface-2"
+        role="progressbar"
+        aria-label="Tiến độ xử lý"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={pct}
+      >
+        <div className="h-full rounded-full bg-accent transition-[width] duration-500 motion-reduce:transition-none" style={{ width: `${pct}%` }} />
       </div>
     </m.section>
   )

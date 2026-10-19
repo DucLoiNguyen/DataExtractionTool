@@ -2073,7 +2073,7 @@ def source_label(path, sheet=None):
     return f"{name} [Sheet: {sheet}]" if sheet is not None else name
 
 
-def extract_v2_batch(items, dedupe=True, verbose=True):
+def extract_v2_batch(items, dedupe=True, verbose=True, progress=None):
     """
     Chay extract_v2 cho NHIEU nguon va GOP thanh 1 danh sach. Moi nguon la
     (duong_dan, to_chuc_mac_dinh) hoac (duong_dan, sheet, to_chuc_mac_dinh)
@@ -2092,7 +2092,10 @@ def extract_v2_batch(items, dedupe=True, verbose=True):
 
     Moi ban ghi/issue co them khoa "source" (xem source_label). Tra ve
     (records, stats) cung dang voi extract_v2, kem stats["files"] = [{source,
-    to_chuc, total_read, final_count, error}] cho tung nguon."""
+    to_chuc, total_read, final_count, error}] cho tung nguon.
+
+    progress(done, total): goi (neu co) luc bat dau va sau moi nguon xong
+    (ke ca nguon loi) de giao dien web hien phan tram."""
     all_records = []
     all_issues = []
     warnings = []
@@ -2115,7 +2118,11 @@ def extract_v2_batch(items, dedupe=True, verbose=True):
     for path, _sheet, _tc in norm_items:
         path_counts[path] = path_counts.get(path, 0) + 1
 
-    for path, sheet, to_chuc in norm_items:
+    if progress:
+        progress(0, len(norm_items))
+    for idx, (path, sheet, to_chuc) in enumerate(norm_items):
+        if progress and idx:
+            progress(idx, len(norm_items))
         source = source_label(path, sheet if path_counts[path] > 1 else None)
         if verbose:
             print(f"=== {source} (Tổ chức mặc định: {to_chuc or '(trống)'}) ===")

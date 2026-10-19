@@ -198,7 +198,7 @@ class JobRequest(BaseModel):
     password: str = ""
 
 
-def _run_extraction(req, paths, job_dir):
+def _run_extraction(req, paths, job_dir, on_progress=None):
     """Chay trong luong nen. paths: list duong dan ung voi req.sources."""
     password = req.password or core.DEFAULT_PASSWORD
     out_path = os.path.join(job_dir, "ket_qua.xlsx")
@@ -218,7 +218,8 @@ def _run_extraction(req, paths, job_dir):
             }
         else:
             items = [(p, s.sheet or None, s.to_chuc.strip()) for p, s in zip(paths, req.sources)]
-            records, stats = v2.extract_v2_batch(items, dedupe=req.dedupe, verbose=False)
+            records, stats = v2.extract_v2_batch(items, dedupe=req.dedupe, verbose=False,
+                                                progress=on_progress)
             v2.write_v2_output(records, TEMPLATE_MODE2, out_path, password=password)
             if stats["issues"]:
                 issues_path = os.path.join(job_dir, "ket_qua_can_kiem_tra.xlsx")
@@ -250,7 +251,11 @@ def _run_extraction(req, paths, job_dir):
 def _job_worker(job_id, req, paths):
     job = _jobs[job_id]
     try:
-        result, files = _run_extraction(req, paths, job["dir"])
+        def on_progress(done, total):
+            job["progress"] = {"done": done, "total": total}
+
+        on_progress(0, len(paths))
+        result, files = _run_extraction(req, paths, job["dir"], on_progress)
         result["job_id"] = job_id
         job.update(status="done", result=result, files=files)
     except Exception as e:
@@ -288,7 +293,7 @@ def get_job(job_id: str):
         return {"status": "done", "result": job["result"]}
     if job["status"] == "error":
         return {"status": "error", "error": job["error"]}
-    return {"status": "running"}
+    return {"status": "running", "progress": job.get("progress")}
 
 
 @app.get("/api/download/{job_id}/{kind}")

@@ -44,11 +44,17 @@ export const api = {
 }
 
 /** Hoi ket qua cho den khi xong. Dung signal de huy khi nguoi dung doi che do / roi trang. */
-export async function waitForJob(jobId: string, signal: AbortSignal, intervalMs = 500): Promise<JobState> {
+export async function waitForJob(
+  jobId: string,
+  signal: AbortSignal,
+  onProgress?: (p: { done: number; total: number }) => void,
+  intervalMs = 500,
+): Promise<JobState> {
   for (;;) {
     if (signal.aborted) throw new DOMException('Đã huỷ', 'AbortError')
     const state = await api.getJob(jobId)
     if (state.status !== 'running') return state
+    if (state.progress) onProgress?.(state.progress)
     await new Promise((resolve) => setTimeout(resolve, intervalMs))
   }
 }
