@@ -1637,6 +1637,26 @@ def _process_data_rows(data_rows, col_map, default_to_chuc, unit_cache, issues,
             rec["row"] = sheet_row
         clean_records.append(rec)
 
+        # Nguoi co CA email cong vu LAN Gmail (2 cot) -> tao 2 tai khoan
+        # (nguoi dung chon 20/10/2026; file Lien Chieu Da Nang 10 nguoi).
+        # Chi khi cot chinh co gia tri (neu trong thi get_email_raw da dung
+        # cot du phong roi, khong tao them).
+        if get_raw(row, "email") not in (None, "") and get_raw(row, "email_alt") not in (None, ""):
+            alt_raw = get_raw(row, "email_alt")
+            alt_email = core.normalize_email(alt_raw)
+            if alt_email and alt_email != email:
+                alt_rec = dict(rec)
+                alt_rec["email"] = alt_email
+                clean_records.append(alt_rec)
+            elif not alt_email:
+                alt_issue = {
+                    "stt": raw_stt, "raw_name": raw_name, "raw_email": _cell_display(alt_raw),
+                    "raw_phone": raw_phone, "raw_unit": raw_unit, "reason": "invalid_email_format",
+                }
+                if sheet_row is not None:
+                    alt_issue["row"] = sheet_row
+                issues.append(alt_issue)
+
     return total_read
 
 
