@@ -611,6 +611,9 @@ def check_default_province(emails, default_to_chuc):
     return None
 
 
+_COMMUNE_PREFIX_RE = re.compile(r"^(?:xã|phường|thị\s*trấn)\s", re.IGNORECASE)
+
+
 def normalize_default_commune(text):
     """Chuan hoa o "Xa/phuong mac dinh" nguoi dung nhap. Nhan "Phường Liên Chiểu",
     "xã ea na"...; thieu tien to xa/phuong thi giu nguyen de nguoi dung tu chiu
@@ -1991,6 +1994,29 @@ def extract_v2(input_path, default_to_chuc=None, dedupe=True, verbose=True, shee
     head_commune = _find_doc_commune(header_text)
     head_issuer = None if head_commune else _find_doc_issuer(header_text, full_text or header_text)
     forced_commune = normalize_default_commune(default_commune)
+    if forced_commune and not _COMMUNE_PREFIX_RE.match(forced_commune):
+        # Nguoi dung go thieu tien to ("Suối Hiệp"): tim trong tep "Xã/Phường Suối Hiệp" de
+        # bo sung; khong tim ra duy nhat 1 ket qua -> giu nguyen + canh bao (khong doan xa hay
+        # phuong), nhung don vi se mat chu Xa/Phuong.
+        key = _norm_key(forced_commune)
+        found = set()
+        for tb in tables:
+            for row in (tb or [])[:40]:
+                for c in row or []:
+                    if isinstance(c, str) and len(c) < 300:
+                        cm = _find_commune_in_text(core.nfc(c))
+                        if cm and _norm_key(cm).split(" ", 1)[-1] == key:
+                            found.add(cm)
+        if not found:
+            # Tieu de co ten xa thuong chi o sheet dau (Suoi Hiep): tra theo ca tep.
+            sug = suggest_commune(input_path)
+            if sug and _norm_key(sug).split(" ", 1)[-1] == key:
+                found.add(sug)
+        if len(found) == 1:
+            forced_commune = next(iter(found))
+        else:
+            warnings.append(f"Xã/phường mặc định \"{forced_commune}\" không có tiền tố Xã/Phường nên đơn vị "
+                            "sẽ không có chữ Xã/Phường - hãy nhập đầy đủ, ví dụ \"Xã " + forced_commune + "\".")
     if forced_commune:
         head_commune, head_issuer = forced_commune, None
     if not tables or not any(tables):
