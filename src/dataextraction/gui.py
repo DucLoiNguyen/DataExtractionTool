@@ -513,6 +513,7 @@ class ContactExtractorGUI(tk.Tk):
         # trung >= 50% email voi sheet truoc mac dinh skip=True (khong doc).
         self.mode2_sources = []
         self.to_chuc_var = tk.StringVar()
+        self.commune_var = tk.StringVar()  # xa/phuong mac dinh cho don vi khong ghi ten xa
 
         self.base_font_family = _pick_font(["Segoe UI", "Helvetica Neue", "Helvetica", "Arial"])
         self.mono_font_family = _pick_font(["Cascadia Mono", "Consolas", "Menlo", "Courier New"])
@@ -804,6 +805,18 @@ class ContactExtractorGUI(tk.Tk):
                        "đang chọn (không chọn dòng nào = áp dụng cho tất cả). Dùng khi nguồn không tự nêu "
                        "rõ tỉnh/thành (vd \"Sở Tư pháp\"). Ví dụ: Cần Thơ",
                   style="Muted.TLabel", wraplength=320).pack(anchor="w", pady=(4, 0))
+        ttk.Label(self.m2_file_frame, text="Xã/phường mặc định (nếu đơn vị không ghi tên xã):",
+                  style="Card.TLabel").pack(anchor="w", pady=(12, 0))
+        row_cm = ttk.Frame(self.m2_file_frame, style="Card.TFrame")
+        row_cm.pack(fill="x", pady=(4, 0))
+        ttk.Entry(row_cm, textvariable=self.commune_var).pack(side="left", fill="x", expand=True)
+        ttk.Button(row_cm, text="Gán", style="Secondary.TButton",
+                   command=self.apply_commune).pack(side="left", padx=(6, 0))
+        ttk.Label(self.m2_file_frame,
+                  text="Dùng khi \"Trạm Y tế phường\", \"Phòng Kinh tế\"... không ghi tên xã/phường: gộp về xã/phường "
+                       "này. Tự điền sẵn khi tệp Excel chỉ nhắc đúng 1 xã/phường; có thể sửa hoặc xoá. "
+                       "Ví dụ: Phường Liên Chiểu",
+                  style="Muted.TLabel", wraplength=320).pack(anchor="w", pady=(4, 0))
         self.m2_count_var = tk.StringVar(value="Chưa chọn tệp nào.")
         ttk.Label(self.m2_file_frame, textvariable=self.m2_count_var, style="Muted.TLabel").pack(
             anchor="w", pady=(8, 0))
@@ -974,11 +987,12 @@ class ContactExtractorGUI(tk.Tk):
                 # (chi Excel/Word/CSV, nhanh); nguoi dung van sua duoc. Nhap nham tinh o lo
                 # nhieu tep rat de, khong co goi y/canh bao thi im lang.
                 p_value = value or (v2.suggest_to_chuc(p) or "")
+                p_commune = self.commune_var.get().strip() or (v2.suggest_commune(p) or "")
                 for sheet, emails, skip, overlap in rows:
                     if (p, sheet) in existing:
                         continue
                     existing.add((p, sheet))
-                    self.mode2_sources.append({"path": p, "sheet": sheet, "to_chuc": p_value, "emails": emails,
+                    self.mode2_sources.append({"path": p, "sheet": sheet, "to_chuc": p_value, "commune": p_commune, "emails": emails,
                                                "skip": skip, "overlap": overlap})
         finally:
             self.config(cursor="")
@@ -1003,6 +1017,15 @@ class ContactExtractorGUI(tk.Tk):
             s["to_chuc"] = value
         self._refresh_mode2_tree(keep_selection=selected)
 
+    def apply_commune(self):
+        """Gan o 'Xa/phuong mac dinh' cho cac dong dang chon (khong chon = tat ca)."""
+        value = self.commune_var.get().strip()
+        selected = self.m2_tree.selection()
+        targets = [self.mode2_sources[int(i)] for i in selected] if selected else self.mode2_sources
+        for s in targets:
+            s["commune"] = value
+        self._refresh_mode2_tree(keep_selection=selected)
+
     def toggle_mode2_sheet(self):
         """Doi trang thai Dung/Bo cua cac sheet dang chon (dong khong phai sheet
         Excel khong doi)."""
@@ -1020,6 +1043,7 @@ class ContactExtractorGUI(tk.Tk):
         if len(selected) == 1:
             s = self.mode2_sources[int(selected[0])]
             self.to_chuc_var.set(s["to_chuc"])
+            self.commune_var.set(s.get("commune", ""))
             self.m2_detail_var.set(self._mode2_status_text(s, full=True))
         else:
             self.m2_detail_var.set("")
@@ -1170,7 +1194,7 @@ class ContactExtractorGUI(tk.Tk):
                 args=([self.mode1_input_path.get().strip()], self.dedupe_var.get()), daemon=True,
             )
         else:
-            items = [(s["path"], s["sheet"], s["to_chuc"]) for s in self.mode2_sources if not s["skip"]]
+            items = [(s["path"], s["sheet"], s["to_chuc"], s.get("commune") or None) for s in self.mode2_sources if not s["skip"]]
             # Ghi ro sheet nao da bo, de nguoi dung chu dong bat lai neu can
             # (vd 16 nguoi moi trong phu luc dau moi Son La).
             for s in self.mode2_sources:

@@ -611,6 +611,41 @@ def check_default_province(emails, default_to_chuc):
     return None
 
 
+def normalize_default_commune(text):
+    """Chuan hoa o "Xa/phuong mac dinh" nguoi dung nhap. Nhan "Phường Liên Chiểu",
+    "xã ea na"...; thieu tien to xa/phuong thi giu nguyen de nguoi dung tu chiu
+    trach nhiem (khong doan xa hay phuong). Rong -> None."""
+    text = core.nfc((text or "").strip())
+    if not text:
+        return None
+    return _find_commune_in_text(text) or text
+
+
+def suggest_commune(path):
+    """Goi y xa/phuong mac dinh cho tep Excel: neu cac o van ban trong tep chi nhac
+    DUNG 1 xa/phuong (>= 2 lan) thi tra ve ten do; nhieu xa/phuong khac nhau (tep
+    gom nhieu don vi) hoac khong co -> None (khong doan)."""
+    if os.path.splitext(path)[1].lower() not in (".xls", ".xlsx", ".xlsm"):
+        return None
+    try:
+        counts = {}
+        for _n, rows in core.read_excel_sheets(path):
+            for row in rows:
+                for c in row or []:
+                    if not isinstance(c, str) or "@" in c or len(c) > 120:
+                        continue
+                    commune = _find_commune_in_text(core.nfc(c))
+                    if commune:
+                        counts[commune] = counts.get(commune, 0) + 1
+    except Exception:
+        return None
+    if len(counts) == 1:
+        name, n = next(iter(counts.items()))
+        if n >= 2:
+            return name
+    return None
+
+
 def suggest_to_chuc(path):
     """Goi y Tổ chức mac dinh cho 1 tep (GUI dien san khi o trong) tu ten mien email;
     chi cho Excel/CSV/Word (nhanh), PDF bo qua (doc cham tren luong giao dien).
@@ -1874,7 +1909,7 @@ def dedupe_records(records, issues):
     return kept_records, dropped
 
 
-def extract_v2(input_path, default_to_chuc=None, dedupe=True, verbose=True, sheet=None):
+def extract_v2(input_path, default_to_chuc=None, dedupe=True, verbose=True, sheet=None, default_commune=None):
     """
     Doc tep dang ky nguon VA AP DUNG DAY DU 3 QUY TAC CUA FILE MAU LOAI 1
     (tai su dung truc tiep tu core.py) CONG 2 QUY TAC RIENG
@@ -1888,6 +1923,10 @@ def extract_v2(input_path, default_to_chuc=None, dedupe=True, verbose=True, shee
     - nhung KHAC file mau loai 1 o cho GIU LAI cot "Don vi/Phong ban/Chuc
     vu" tren tung dong thay vi loc bo, vi che do nay CAN thong tin do de
     chuan hoa Don vi/To chuc).
+
+    default_commune: xa/phuong mac dinh do nguoi dung nhap (vd "Phường Liên Chiểu")
+    cho tep ma cac don vi nho (Tram Y te phuong, Phong...) KHONG ghi ten xa -> gop ve
+    xa/phuong nay nhu "xa ban hanh". Uu tien hon xa suy tu van ban.
 
     sheet: ten sheet cua tep Excel. None -> doc cac sheet co email, bo sheet
     trung (xem _select_excel_tables); co gia tri -> CHI doc dung sheet do.
@@ -1920,6 +1959,9 @@ def extract_v2(input_path, default_to_chuc=None, dedupe=True, verbose=True, shee
     # Excel: tinh lai cho TUNG BANG (moi sheet co the thuoc 1 co quan khac).
     head_commune = _find_doc_commune(header_text)
     head_issuer = None if head_commune else _find_doc_issuer(header_text, full_text or header_text)
+    forced_commune = normalize_default_commune(default_commune)
+    if forced_commune:
+        head_commune, head_issuer = forced_commune, None
     if not tables or not any(tables):
         raise ValueError("Tệp nguồn không có dữ liệu.")
 
@@ -2097,6 +2139,7 @@ def extract_v2_batch(items, dedupe=True, verbose=True, progress=None):
     """
     Chay extract_v2 cho NHIEU nguon va GOP thanh 1 danh sach. Moi nguon la
     (duong_dan, to_chuc_mac_dinh) hoac (duong_dan, sheet, to_chuc_mac_dinh)
+    [, xa_phuong_mac_dinh] (xem extract_v2.default_commune)
     - moi nguon co "To chuc mac dinh" rieng (cac tep/sheet trong 1 lo co the
     thuoc cac tinh khac nhau); sheet=None -> doc theo quy tac mac dinh cua
     extract_v2. Nhan nguon ("source") chi kem ten sheet khi cung 1 tep co
@@ -2128,19 +2171,19 @@ def extract_v2_batch(items, dedupe=True, verbose=True, progress=None):
     norm_items = []
     for it in items:
         if len(it) == 2:
-            norm_items.append((it[0], None, it[1]))
+            norm_items.append((it[0], None, it[1], None))
         else:
-            norm_items.append((it[0], it[1], it[2]))
+            norm_items.append((it[0], it[1], it[2], it[3] if len(it) > 3 else None))
 
     # Chi ghi ten sheet vao nhan nguon khi cung 1 tep xuat hien nhieu lan (tep
     # Excel duoc tach thanh nhieu sheet); tep chi doc 1 sheet thi nhan gon.
     path_counts = {}
-    for path, _sheet, _tc in norm_items:
+    for path, _sheet, _tc, _cm in norm_items:
         path_counts[path] = path_counts.get(path, 0) + 1
 
     if progress:
         progress(0, len(norm_items))
-    for idx, (path, sheet, to_chuc) in enumerate(norm_items):
+    for idx, (path, sheet, to_chuc, commune) in enumerate(norm_items):
         if progress and idx:
             progress(idx, len(norm_items))
         source = source_label(path, sheet if path_counts[path] > 1 else None)
@@ -2149,7 +2192,8 @@ def extract_v2_batch(items, dedupe=True, verbose=True, progress=None):
         try:
             # dedupe=False: loc trung duoc lam 1 lan tren ca lo o duoi
             records, stats = extract_v2(path, default_to_chuc=to_chuc or None, dedupe=False,
-                                        verbose=verbose, sheet=sheet)
+                                        verbose=verbose, sheet=sheet,
+                                        default_commune=commune)
         except Exception as e:
             warnings.append(f"{source}: không đọc được tệp - {e}")
             files.append({"source": source, "to_chuc": to_chuc, "total_read": 0, "final_count": 0,

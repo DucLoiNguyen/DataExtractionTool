@@ -23,7 +23,7 @@ const HINTS: Record<Mode, string> = {
 }
 
 function rowsFromUpload(up: UploadResponse, mode: Mode, toChuc: string): SourceRow[] {
-  const base = { fileId: up.file_id, fileName: up.name, toChuc }
+  const base = { fileId: up.file_id, fileName: up.name, toChuc, commune: up.commune_suggestion ?? '' }
   if (mode === 'mode2' && up.sheets.length) {
     return up.sheets.map((s) => ({
       ...base,
@@ -145,7 +145,7 @@ export default function App() {
     try {
       const { job_id } = await api.createJob({
         mode,
-        sources: active.map((s) => ({ file_id: s.fileId, sheet: s.sheet, to_chuc: s.toChuc })),
+        sources: active.map((s) => ({ file_id: s.fileId, sheet: s.sheet, to_chuc: s.toChuc, commune: s.commune })),
         dedupe,
         password,
       })

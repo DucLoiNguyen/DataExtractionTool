@@ -13,6 +13,7 @@ export interface UploadResponse {
   size: number
   sheets: SheetInfo[]
   suggestion: string
+  commune_suggestion: string
   error: string | null
 }
 
@@ -70,11 +71,12 @@ export interface SourceRow {
   skip: boolean
   overlap: number
   toChuc: string
+  commune: string
 }
 
 export interface JobRequest {
   mode: Mode
-  sources: { file_id: string; sheet: string | null; to_chuc: string }[]
+  sources: { file_id: string; sheet: string | null; to_chuc: string; commune: string }[]
   dedupe: boolean
   password: string
 }

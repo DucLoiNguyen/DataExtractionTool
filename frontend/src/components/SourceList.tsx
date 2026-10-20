@@ -54,6 +54,16 @@ export function SourceList({ mode, sources, onChange, onRemove }: Props) {
             {m2 && (
               <Input
                 className="mt-2"
+                value={s.commune}
+                disabled={s.skip}
+                placeholder="Xã/phường mặc định (nếu đơn vị không ghi tên xã)"
+                aria-label={`Xã/phường mặc định cho ${s.fileName}${s.sheet ? ` › ${s.sheet}` : ''}`}
+                onChange={(e) => onChange(s.key, { commune: e.target.value })}
+              />
+            )}
+            {m2 && (
+              <Input
+                className="mt-2"
                 value={s.toChuc}
                 disabled={s.skip}
                 placeholder="Tổ chức mặc định"

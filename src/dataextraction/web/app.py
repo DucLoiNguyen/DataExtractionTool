@@ -134,7 +134,7 @@ def config():
 
 def _inspect_upload(path, ext):
     """Liet ke sheet co email (Excel) + goi y To chuc mac dinh - lam 1 lan ngay luc tai len."""
-    sheets, error, suggestion = [], None, ""
+    sheets, error, suggestion, commune = [], None, "", ""
     with _work_lock:
         if ext in (".xlsx", ".xls"):
             try:
@@ -146,7 +146,9 @@ def _inspect_upload(path, ext):
                 suggestion = v2.suggest_to_chuc(path) or ""
             except Exception:
                 suggestion = ""
-    return sheets, error, suggestion
+        if ext in (".xlsx", ".xls"):
+            commune = v2.suggest_commune(path) or ""  # tra None neu khong chac (loi da nuot ben trong)
+    return sheets, error, suggestion, commune
 
 
 @app.post("/api/uploads")
@@ -166,7 +168,7 @@ async def upload(file: UploadFile = File(...)):
                 if size > MAX_UPLOAD_BYTES:
                     raise HTTPException(413, f"Tệp quá lớn (tối đa {MAX_UPLOAD_MB} MB): {file.filename}")
                 f.write(chunk)
-        sheets, error, suggestion = await run_in_threadpool(_inspect_upload, path, ext)
+        sheets, error, suggestion, commune = await run_in_threadpool(_inspect_upload, path, ext)
     except BaseException:
         shutil.rmtree(up_dir, ignore_errors=True)
         raise
@@ -174,7 +176,8 @@ async def upload(file: UploadFile = File(...)):
         _uploads[file_id] = {"path": path, "name": file.filename or os.path.basename(path),
                              "size": size, "dir": up_dir, "created": time.time()}
     return {"file_id": file_id, "name": file.filename, "size": size,
-            "sheets": sheets, "suggestion": suggestion, "error": error}
+            "sheets": sheets, "suggestion": suggestion,
+            "commune_suggestion": commune, "error": error}
 
 
 @app.delete("/api/uploads/{file_id}", status_code=204)
@@ -189,6 +192,7 @@ class Source(BaseModel):
     file_id: str
     sheet: Optional[str] = None
     to_chuc: str = ""
+    commune: str = ""  # xa/phuong mac dinh cho don vi khong ghi ten xa (che do 2)
 
 
 class JobRequest(BaseModel):
@@ -217,7 +221,7 @@ def _run_extraction(req, paths, job_dir, on_progress=None):
                 "final": stats["final_count"],
             }
         else:
-            items = [(p, s.sheet or None, s.to_chuc.strip()) for p, s in zip(paths, req.sources)]
+            items = [(p, s.sheet or None, s.to_chuc.strip(), s.commune.strip() or None) for p, s in zip(paths, req.sources)]
             records, stats = v2.extract_v2_batch(items, dedupe=req.dedupe, verbose=False,
                                                 progress=on_progress)
             v2.write_v2_output(records, TEMPLATE_MODE2, out_path, password=password)
