@@ -56,7 +56,7 @@ export interface ExtractResult {
 }
 
 export type JobState =
-  | { status: 'running' }
+  | { status: 'running'; progress?: { done: number; total: number } | null }
   | { status: 'done'; result: ExtractResult }
   | { status: 'error'; error: string }
 

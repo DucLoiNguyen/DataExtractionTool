@@ -1,5 +1,5 @@
 import { AnimatePresence } from 'motion/react'
-import { AlertCircle, ChevronDown, Loader2, Play } from 'lucide-react'
+import { AlertCircle, ChevronDown, Loader2, Play, Trash2 } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { EmptyState, RunningCard } from '@/components/Placeholders'
 import { ResultView } from '@/components/ResultView'
@@ -48,6 +48,7 @@ export default function App() {
   const [password, setPassword] = useState('')
   const [dedupe, setDedupe] = useState(true)
   const [elapsed, setElapsed] = useState(0)
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null)
   const abortRef = useRef<AbortController | null>(null)
   const resultRef = useRef<HTMLElement>(null)
 
@@ -82,6 +83,16 @@ export default function App() {
     setSources([])
     setResult(null)
     setErrors([])
+    setRunning(false)
+  }
+
+  const resetAll = () => {
+    abortRef.current?.abort()
+    discard(sources)
+    setSources([])
+    setResult(null)
+    setErrors([])
+    setProgress(null)
     setRunning(false)
   }
 
@@ -128,6 +139,7 @@ export default function App() {
     const ctrl = new AbortController()
     abortRef.current = ctrl
     setRunning(true)
+    setProgress(null)
     setErrors([])
     setResult(null)
     try {
@@ -137,7 +149,7 @@ export default function App() {
         dedupe,
         password,
       })
-      const state = await waitForJob(job_id, ctrl.signal)
+      const state = await waitForJob(job_id, ctrl.signal, setProgress)
       if (state.status === 'done') setResult(state.result)
       else if (state.status === 'error') setErrors([state.error])
     } catch (err) {
@@ -209,6 +221,12 @@ export default function App() {
             {running ? <Loader2 className="size-4 animate-spin motion-reduce:animate-none" aria-hidden /> : <Play className="size-4" aria-hidden />}
             {running ? 'Đang trích xuất…' : active.length > 1 ? `Trích xuất ${active.length} nguồn` : 'Trích xuất'}
           </Button>
+          {(sources.length > 0 || result !== null || errors.length > 0) && (
+            <Button className="w-full" onClick={resetAll} disabled={uploading > 0}>
+              <Trash2 className="size-4" aria-hidden />
+              Xoá hết, làm lại
+            </Button>
+          )}
           <div className="min-h-5 text-[13px] text-muted" aria-live="polite">
             {uploading > 0 && 'Đang đọc tệp…'}
           </div>
@@ -225,7 +243,7 @@ export default function App() {
             {result ? (
               <ResultView key={result.job_id} result={result} />
             ) : running ? (
-              <RunningCard key="running" elapsed={elapsed} sources={active.length} />
+              <RunningCard key="running" elapsed={elapsed} sources={active.length} progress={progress} />
             ) : (
               <EmptyState key="empty" />
             )}
