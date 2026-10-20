@@ -630,13 +630,15 @@ def suggest_commune(path):
     try:
         counts = {}
         for _n, rows in core.read_excel_sheets(path):
-            for row in rows:
+            for r_i, row in enumerate(rows):
                 for c in row or []:
-                    if not isinstance(c, str) or "@" in c or len(c) > 120:
+                    if not isinstance(c, str) or "@" in c or len(c) > 300:
                         continue
                     commune = _find_commune_in_text(core.nfc(c))
                     if commune:
-                        counts[commune] = counts.get(commune, 0) + 1
+                        # Tieu de o dau sheet ("... CÔNG VỤ XÃ SUỐI HIỆP") la dau hieu manh:
+                        # 1 lan nhac o do du, tinh nhu 2 lan.
+                        counts[commune] = counts.get(commune, 0) + (2 if r_i < 8 else 1)
     except Exception:
         return None
     if len(counts) == 1:
@@ -847,8 +849,27 @@ def _looks_like_group_header(row, col_map):
     relevant_idxs = [i for i in (col_map.get("name"), col_map.get("unit")) if i is not None]
     if not relevant_idxs:
         return False
+    stt_idx = col_map.get("stt")
+    if stt_idx is not None and stt_idx < len(row) and not core.is_group_stt(row[stt_idx]):
+        # STT la so thuong (3, 5) -> day la 1 NGUOI thieu ca email lan SDT (Suoi Hiep:
+        # Thai Bao Tran, Le Thi Thu Suong), khong phai tieu de nhom (tieu de nhom co
+        # STT trong/so La Ma); neu hieu nham, ten nguoi do thanh don vi cua nguoi sau.
+        name_idx = col_map.get("name")
+        name_val = _cell_display(row[name_idx]) if name_idx is not None and name_idx < len(row) else ""
+        if not core._GROUP_UNIT_START_RE.match(name_val):
+            return False
     non_empty_relevant = [row[i] for i in relevant_idxs if i < len(row) and row[i] not in (None, "")]
     return len(non_empty_relevant) == 1
+
+
+_JOB_CATEGORY_GROUPS = {"lanh dao", "cong chuc", "vien chuc", "chuyen vien", "can bo", "nhan vien",
+                        "nguoi lao dong", "ban lanh dao", "lanh dao don vi", "cong chuc, vien chuc"}
+
+
+def _is_job_category_group(text):
+    """Tieu de nhom la NHOM CHUC DANH ('I. Lãnh đạo', 'II. Công chức', 'Viên chức' - Suoi
+    Hiep), khong phai don vi -> khong duoc dung lam don vi ('Công chức - Khánh Hòa')."""
+    return _norm_key(text or "").strip(" .:-") in _JOB_CATEGORY_GROUPS
 
 
 def _group_header_text(row, col_map):
@@ -1573,6 +1594,8 @@ def _process_data_rows(data_rows, col_map, default_to_chuc, unit_cache, issues,
                 group_col_value = g
         elif _looks_like_group_header(row, col_map):
             current_group = _group_header_text(row, col_map)
+            if _is_job_category_group(current_group):
+                current_group = ""
             group_header_seen = True
             continue  # dong tieu de nhom - CHI cap nhat nhom hien tai, khong tinh la 1 dong du lieu
 
@@ -1642,8 +1665,16 @@ def _process_data_rows(data_rows, col_map, default_to_chuc, unit_cache, issues,
             # trong bang nay (thuong gap o cac phieu dang ky 1 don vi
             # duy nhat, vd file PDF cua 1 phong/xa cu the).
             raw_unit = fallback_unit
-        if not raw_name and not raw_email and not raw_phone and not raw_unit:
-            continue  # dong hoan toan trong - bo qua, khong tinh vao thong ke
+        if not raw_unit and doc_commune:
+            # O don vi trong hoan toan nhung van ban co xa/phuong ban hanh (hoac nguoi dung
+            # nhap "Xa/phuong mac dinh") -> nguoi nay thuoc chinh xa/phuong do (Suoi Hiep:
+            # moi sheet la 1 bo phan, khong co cot don vi).
+            raw_unit = doc_commune
+        if not raw_name and not raw_email and not raw_phone:
+            # Dong trong (ke ca dong chi co STT trong mau bieu, hoac chi co don vi nhom):
+            # khong phai nguoi -> bo qua, khong tinh vao thong ke/"Can kiem tra" (Suoi Hiep:
+            # 142 dong STT trong bi bao "Thiếu email").
+            continue
         total_read += 1
 
         # --- Ap dung 3 quy tac goc cua file mau 1 (dung GIA TRI THO, chua

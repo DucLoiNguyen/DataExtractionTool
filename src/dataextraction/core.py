@@ -1352,6 +1352,11 @@ def extract_from_table_rows(rows, row_stats=None, source_label="", seen_stts=Non
         raw_phone = _find_phone_in_row(row, col_map.get("phone"), email_used_idx,
                                        col_map.get("email"), skip_idxs)
 
+        if not raw_email and not raw_phone and not str(get("name") or "").strip():
+            # Dong chi co STT (mau bieu in san, Suoi Hiep: 142 dong) khong phai nguoi ->
+            # khong dem vao thong ke / "Can kiem tra".
+            continue
+
         row_context = {"source": source_label, "row_number": display_row, "stt": stt}
         rec = build_clean_record(raw_email or "", get("name"), raw_phone if raw_phone is not None else "",
                                   row_stats=row_stats, row_context=row_context)
