@@ -768,6 +768,13 @@ def _find_source_columns(header_row):
     # cot dung/day du - quet theo tu khoa cu the truoc (vd "don vi cong
     # tac" truoc "don vi") dam bao chon dung cot ngay ca khi no nam ben
     # phai cot kia.
+    # File co 2 cot "ĐƠN VỊ CẤP TỈNH" (chi ghi "Tỉnh Lâm Đồng") + "ĐƠN VỊ CẤP XÃ" (CLEX_CMC:
+    # "xã Cư Jút"): don vi la cot CAP XA; neu quet theo thu tu thuong, cot cap tinh (nam ben
+    # trai) duoc chon va ca 639 nguoi ra don vi "Lâm Đồng", mat xa.
+    for idx, cell in enumerate(header_row):
+        if re.search(r"\bcap\s+(xa|phuong)\b", _norm_key(cell)):
+            col_map["unit"] = idx
+            break
     for kw in UNIT_PRIMARY_KEYWORDS:
         if "unit" in col_map:
             break
