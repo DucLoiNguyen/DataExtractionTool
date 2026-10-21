@@ -380,14 +380,19 @@ def _find_commune_in_text(text):
 
 # "(?<!cán )": "Cán bộ thường trực Trung tâm học tập cộng đồng" khong phai "Bộ" (cap tren xa).
 # "(?<!trụ )": "THCS Tiên Lữ - Trụ sở chính" khong phai "Sở" (cap tren xa).
-_ABOVE_COMMUNE_RE = re.compile(r"(?<!\w)(?:tỉnh|thành\s*phố|(?<!trụ )sở|(?<!cán )bộ|cục|tổng\s*cục)(?!\w)", re.IGNORECASE)
+# "(?<!đinh )": "Trường THCS Đinh Bộ Lĩnh" (ten nguoi) khong phai "Bộ".
+# "(?<!cơ )": "Trường Trung học cơ sở Đinh Bộ Lĩnh" khong phai "Sở" (EaHleo: 300 nguoi
+# truong hoc ghi day du "cơ sở" bi giu nguyen thay vi gop ve xa).
+_ABOVE_COMMUNE_RE = re.compile(r"(?<!\w)(?:tỉnh|thành\s*phố|(?<!trụ )(?<!cơ )sở|(?<!cán )(?<!đinh )bộ|cục|tổng\s*cục)(?!\w)", re.IGNORECASE)
 # Don vi KHONG thuoc cap xa (cap huyen cu, don vi nganh doc, doanh nghiep)
 # - khong tu gan vao xa ban hanh van ban khi o don vi khong ghi ten xa. Vd
 # van ban cua xa Nghia Do co the co "Bệnh viện Đa khoa huyện Bảo Yên", "Chi
 # nhánh Ngân hàng Chính sách xã hội" -> giu nguyen, khong doan la "Xã Nghĩa Đô".
 _NOT_COMMUNE_UNIT_RE = re.compile(
     r"(?<!\w)(?:huyện|quận|thị\s*xã|bệnh\s*viện|ngân\s*hàng|chi\s*nhánh|đại\s*học|cao\s*đẳng|"
-    r"kho\s*bạc|bảo\s*hiểm\s*xã\s*hội|chi\s*cục|điện\s*lực|bưu\s*điện|viettel|vnpt|công\s*ty)(?!\w)",
+    r"kho\s*bạc|bảo\s*hiểm\s*xã\s*hội|chi\s*cục|điện\s*lực|bưu\s*điện|viettel|vnpt|công\s*ty|"
+    # THPT/GDNN-GDTX thuoc So Giao duc, hop tac xa la doanh nghiep: khong suy ra xa tu co quan ban hanh
+    r"thpt|trung\s*học\s*phổ\s*thông|gdnn|gdtx|giáo\s*dục\s*(?:nghề\s*nghiệp|thường\s*xuyên)|hợp\s*tác\s*xã|htx)(?!\w)",
     re.IGNORECASE,
 )
 
@@ -556,6 +561,14 @@ def normalize_don_vi(raw_don_vi_cong_tac, default_to_chuc=None, doc_commune=None
 
     province = _resolve_current_province(raw_don_vi_cong_tac, default_to_chuc=default_to_chuc)
     if province:
+        # Ten don vi da ghi 'tinh/thanh pho X' o cuoi ('Sở Nông nghiệp và Môi trường tỉnh
+        # Tuyên Quang') -> bo duoi do vi hau to ' - Tuyên Quang' da the hien. Chi bo khi X
+        # DUNG la tinh se them vao hau to (khong mat thong tin) va phan con lai >= 2 tu.
+        tail = _PROVINCE_TAIL_RE.search(core)
+        if tail and get_current_province_name(tail.group(1).strip())[0] == province:
+            head = core[:tail.start()].strip()
+            if len(head.split()) >= 2:
+                core = head
         return f"{core} - {province}"
     return core
 
@@ -603,6 +616,46 @@ def check_default_province(emails, default_to_chuc):
     if guess and guess != chosen:
         return (f"Email phổ biến @{dom} gợi ý {guess}, nhưng Tổ chức mặc định đang là {chosen} - "
                 "hãy kiểm tra lại ô \"Tổ chức mặc định\" của tệp này.")
+    return None
+
+
+_COMMUNE_PREFIX_RE = re.compile(r"^(?:xã|phường|thị\s*trấn)\s", re.IGNORECASE)
+
+
+def normalize_default_commune(text):
+    """Chuan hoa o "Xa/phuong mac dinh" nguoi dung nhap. Nhan "Phường Liên Chiểu",
+    "xã ea na"...; thieu tien to xa/phuong thi giu nguyen de nguoi dung tu chiu
+    trach nhiem (khong doan xa hay phuong). Rong -> None."""
+    text = core.nfc((text or "").strip())
+    if not text:
+        return None
+    return _find_commune_in_text(text) or text
+
+
+def suggest_commune(path):
+    """Goi y xa/phuong mac dinh cho tep Excel: neu cac o van ban trong tep chi nhac
+    DUNG 1 xa/phuong (>= 2 lan) thi tra ve ten do; nhieu xa/phuong khac nhau (tep
+    gom nhieu don vi) hoac khong co -> None (khong doan)."""
+    if os.path.splitext(path)[1].lower() not in (".xls", ".xlsx", ".xlsm"):
+        return None
+    try:
+        counts = {}
+        for _n, rows in core.read_excel_sheets(path):
+            for r_i, row in enumerate(rows):
+                for c in row or []:
+                    if not isinstance(c, str) or "@" in c or len(c) > 300:
+                        continue
+                    commune = _find_commune_in_text(core.nfc(c))
+                    if commune:
+                        # Tieu de o dau sheet ("... CÔNG VỤ XÃ SUỐI HIỆP") la dau hieu manh:
+                        # 1 lan nhac o do du, tinh nhu 2 lan.
+                        counts[commune] = counts.get(commune, 0) + (2 if r_i < 8 else 1)
+    except Exception:
+        return None
+    if len(counts) == 1:
+        name, n = next(iter(counts.items()))
+        if n >= 2:
+            return name
     return None
 
 
@@ -723,6 +776,13 @@ def _find_source_columns(header_row):
     # cot dung/day du - quet theo tu khoa cu the truoc (vd "don vi cong
     # tac" truoc "don vi") dam bao chon dung cot ngay ca khi no nam ben
     # phai cot kia.
+    # File co 2 cot "ĐƠN VỊ CẤP TỈNH" (chi ghi "Tỉnh Lâm Đồng") + "ĐƠN VỊ CẤP XÃ" (CLEX_CMC:
+    # "xã Cư Jút"): don vi la cot CAP XA; neu quet theo thu tu thuong, cot cap tinh (nam ben
+    # trai) duoc chon va ca 639 nguoi ra don vi "Lâm Đồng", mat xa.
+    for idx, cell in enumerate(header_row):
+        if re.search(r"\bcap\s+(xa|phuong)\b", _norm_key(cell)):
+            col_map["unit"] = idx
+            break
     for kw in UNIT_PRIMARY_KEYWORDS:
         if "unit" in col_map:
             break
@@ -737,6 +797,16 @@ def _find_source_columns(header_row):
             if kw in _norm_key(cell):
                 col_map["unit"] = idx
                 break
+    # Cot "Địa chỉ (Bộ/Tỉnh/Xã)" dạng "Đắk Lắk / Xã Ea Na" (EaHleo.xlsx): cho biết
+    # xa/phuong cua tung nguoi khi o Co quan chi ghi "Phòng Kinh tế", "UBND"...
+    # Khong nham voi cot "Dia chi email/thu" (da la cot email).
+    used = set(col_map.values()) | set(email_candidates)
+    for idx, cell in enumerate(header_row):
+        k = _norm_key(cell)
+        # bo cot "Loai dia chi" (gia tri chi la "Tinh/TP")
+        if idx not in used and "dia chi" in k and "loai" not in k:
+            col_map["addr"] = idx
+            break
     # Tieu de GOP O chia thanh 2 cot lien ke CUNG TEN (vd 2 cot "Cơ quan,
     # đơn vị công tác": cot 1 ghi bo phan "HĐND"/"Phòng VHXH", cot 2 ghi
     # "Xã Long Hòa") - danh dau cot thu 2 de GHEP gia tri, tranh mat phan
@@ -797,8 +867,27 @@ def _looks_like_group_header(row, col_map):
     relevant_idxs = [i for i in (col_map.get("name"), col_map.get("unit")) if i is not None]
     if not relevant_idxs:
         return False
+    stt_idx = col_map.get("stt")
+    if stt_idx is not None and stt_idx < len(row) and not core.is_group_stt(row[stt_idx]):
+        # STT la so thuong (3, 5) -> day la 1 NGUOI thieu ca email lan SDT (Suoi Hiep:
+        # Thai Bao Tran, Le Thi Thu Suong), khong phai tieu de nhom (tieu de nhom co
+        # STT trong/so La Ma); neu hieu nham, ten nguoi do thanh don vi cua nguoi sau.
+        name_idx = col_map.get("name")
+        name_val = _cell_display(row[name_idx]) if name_idx is not None and name_idx < len(row) else ""
+        if not core._GROUP_UNIT_START_RE.match(name_val):
+            return False
     non_empty_relevant = [row[i] for i in relevant_idxs if i < len(row) and row[i] not in (None, "")]
     return len(non_empty_relevant) == 1
+
+
+_JOB_CATEGORY_GROUPS = {"lanh dao", "cong chuc", "vien chuc", "chuyen vien", "can bo", "nhan vien",
+                        "nguoi lao dong", "ban lanh dao", "lanh dao don vi", "cong chuc, vien chuc"}
+
+
+def _is_job_category_group(text):
+    """Tieu de nhom la NHOM CHUC DANH ('I. Lãnh đạo', 'II. Công chức', 'Viên chức' - Suoi
+    Hiep), khong phai don vi -> khong duoc dung lam don vi ('Công chức - Khánh Hòa')."""
+    return _norm_key(text or "").strip(" .:-") in _JOB_CATEGORY_GROUPS
 
 
 def _group_header_text(row, col_map):
@@ -1523,6 +1612,8 @@ def _process_data_rows(data_rows, col_map, default_to_chuc, unit_cache, issues,
                 group_col_value = g
         elif _looks_like_group_header(row, col_map):
             current_group = _group_header_text(row, col_map)
+            if _is_job_category_group(current_group):
+                current_group = ""
             group_header_seen = True
             continue  # dong tieu de nhom - CHI cap nhat nhom hien tai, khong tinh la 1 dong du lieu
 
@@ -1531,6 +1622,9 @@ def _process_data_rows(data_rows, col_map, default_to_chuc, unit_cache, issues,
         raw_email = _cell_display(get_email_raw(row))
         raw_phone = get_display(row, "phone")
         raw_unit_from_col = get_display(row, "unit")
+        # Xa/phuong ghi o cot Dia chi cua RIENG dong nay (xem _find_source_columns).
+        addr_commune = _find_commune_in_text(get_display(row, "addr")) if "addr" in col_map else None
+        row_commune = addr_commune or doc_commune
         unit2 = get_display(row, "unit2") if "unit2" in col_map else ""
         if unit2 and _norm_key(unit2) != _norm_key(raw_unit_from_col):
             raw_unit_from_col = f"{raw_unit_from_col} {unit2}".strip() if raw_unit_from_col else unit2
@@ -1572,6 +1666,16 @@ def _process_data_rows(data_rows, col_map, default_to_chuc, unit_cache, issues,
             raw_unit = _unit_under_group(raw_unit_from_col, current_group)
         else:
             raw_unit = raw_unit_from_col
+        if not raw_unit and addr_commune:
+            raw_unit = addr_commune  # o Co quan trong nhung cot Dia chi ghi xa/phuong
+        elif addr_commune and raw_unit:
+            # Cot Dia chi la nguon ro rang ve xa/phuong (nguoi dung chon 16/10/2026):
+            # thong nhat ten xa ("M'Drắk" va "M’Drắk" la 1 xa) va sua o co quan doc
+            # nham ("MTTQ VN xã Kiêm chữ thập đỏ" o dia chi Xã Ea Ô -> "Kiêm").
+            own = _find_commune_in_text(raw_unit)
+            if own and own != addr_commune and not _ABOVE_COMMUNE_RE.search(raw_unit) \
+                    and not _NOT_COMMUNE_UNIT_RE.search(raw_unit):
+                raw_unit = addr_commune
         if not raw_unit and fallback_unit:
             # Khong co cot Don vi rieng tren tung dong (VA khong dung co
             # che nhom o tren) - dung Don vi trich tu phan van ban tu do
@@ -1579,8 +1683,16 @@ def _process_data_rows(data_rows, col_map, default_to_chuc, unit_cache, issues,
             # trong bang nay (thuong gap o cac phieu dang ky 1 don vi
             # duy nhat, vd file PDF cua 1 phong/xa cu the).
             raw_unit = fallback_unit
-        if not raw_name and not raw_email and not raw_phone and not raw_unit:
-            continue  # dong hoan toan trong - bo qua, khong tinh vao thong ke
+        if not raw_unit and doc_commune:
+            # O don vi trong hoan toan nhung van ban co xa/phuong ban hanh (hoac nguoi dung
+            # nhap "Xa/phuong mac dinh") -> nguoi nay thuoc chinh xa/phuong do (Suoi Hiep:
+            # moi sheet la 1 bo phan, khong co cot don vi).
+            raw_unit = doc_commune
+        if not raw_name and not raw_email and not raw_phone:
+            # Dong trong (ke ca dong chi co STT trong mau bieu, hoac chi co don vi nhom):
+            # khong phai nguoi -> bo qua, khong tinh vao thong ke/"Can kiem tra" (Suoi Hiep:
+            # 142 dong STT trong bi bao "Thiếu email").
+            continue
         total_read += 1
 
         # --- Ap dung 3 quy tac goc cua file mau 1 (dung GIA TRI THO, chua
@@ -1601,13 +1713,33 @@ def _process_data_rows(data_rows, col_map, default_to_chuc, unit_cache, issues,
         phone = core.normalize_phone(get_raw(row, "phone"))
 
         # --- Ap dung 2 quy tac rieng cua file mau 2 ---
-        don_vi, to_chuc = _unit_lookup(unit_cache, raw_unit, default_to_chuc, doc_commune, doc_issuer)
+        don_vi, to_chuc = _unit_lookup(unit_cache, raw_unit, default_to_chuc, row_commune, doc_issuer)
 
         rec = {"stt": raw_stt, "name": name, "email": email, "phone": phone,
                "don_vi": don_vi, "to_chuc": to_chuc}
         if sheet_row is not None:
             rec["row"] = sheet_row
         clean_records.append(rec)
+
+        # Nguoi co CA email cong vu LAN Gmail (2 cot) -> tao 2 tai khoan
+        # (nguoi dung chon 20/10/2026; file Lien Chieu Da Nang 10 nguoi).
+        # Chi khi cot chinh co gia tri (neu trong thi get_email_raw da dung
+        # cot du phong roi, khong tao them).
+        if get_raw(row, "email") not in (None, "") and get_raw(row, "email_alt") not in (None, ""):
+            alt_raw = get_raw(row, "email_alt")
+            alt_email = core.normalize_email(alt_raw)
+            if alt_email and alt_email != email:
+                alt_rec = dict(rec)
+                alt_rec["email"] = alt_email
+                clean_records.append(alt_rec)
+            elif not alt_email:
+                alt_issue = {
+                    "stt": raw_stt, "raw_name": raw_name, "raw_email": _cell_display(alt_raw),
+                    "raw_phone": raw_phone, "raw_unit": raw_unit, "reason": "invalid_email_format",
+                }
+                if sheet_row is not None:
+                    alt_issue["row"] = sheet_row
+                issues.append(alt_issue)
 
     return total_read
 
@@ -1826,7 +1958,7 @@ def dedupe_records(records, issues):
     return kept_records, dropped
 
 
-def extract_v2(input_path, default_to_chuc=None, dedupe=True, verbose=True, sheet=None):
+def extract_v2(input_path, default_to_chuc=None, dedupe=True, verbose=True, sheet=None, default_commune=None):
     """
     Doc tep dang ky nguon VA AP DUNG DAY DU 3 QUY TAC CUA FILE MAU LOAI 1
     (tai su dung truc tiep tu core.py) CONG 2 QUY TAC RIENG
@@ -1840,6 +1972,10 @@ def extract_v2(input_path, default_to_chuc=None, dedupe=True, verbose=True, shee
     - nhung KHAC file mau loai 1 o cho GIU LAI cot "Don vi/Phong ban/Chuc
     vu" tren tung dong thay vi loc bo, vi che do nay CAN thong tin do de
     chuan hoa Don vi/To chuc).
+
+    default_commune: xa/phuong mac dinh do nguoi dung nhap (vd "Phường Liên Chiểu")
+    cho tep ma cac don vi nho (Tram Y te phuong, Phong...) KHONG ghi ten xa -> gop ve
+    xa/phuong nay nhu "xa ban hanh". Uu tien hon xa suy tu van ban.
 
     sheet: ten sheet cua tep Excel. None -> doc cac sheet co email, bo sheet
     trung (xem _select_excel_tables); co gia tri -> CHI doc dung sheet do.
@@ -1872,6 +2008,32 @@ def extract_v2(input_path, default_to_chuc=None, dedupe=True, verbose=True, shee
     # Excel: tinh lai cho TUNG BANG (moi sheet co the thuoc 1 co quan khac).
     head_commune = _find_doc_commune(header_text)
     head_issuer = None if head_commune else _find_doc_issuer(header_text, full_text or header_text)
+    forced_commune = normalize_default_commune(default_commune)
+    if forced_commune and not _COMMUNE_PREFIX_RE.match(forced_commune):
+        # Nguoi dung go thieu tien to ("Suối Hiệp"): tim trong tep "Xã/Phường Suối Hiệp" de
+        # bo sung; khong tim ra duy nhat 1 ket qua -> giu nguyen + canh bao (khong doan xa hay
+        # phuong), nhung don vi se mat chu Xa/Phuong.
+        key = _norm_key(forced_commune)
+        found = set()
+        for tb in tables:
+            for row in (tb or [])[:40]:
+                for c in row or []:
+                    if isinstance(c, str) and len(c) < 300:
+                        cm = _find_commune_in_text(core.nfc(c))
+                        if cm and _norm_key(cm).split(" ", 1)[-1] == key:
+                            found.add(cm)
+        if not found:
+            # Tieu de co ten xa thuong chi o sheet dau (Suoi Hiep): tra theo ca tep.
+            sug = suggest_commune(input_path)
+            if sug and _norm_key(sug).split(" ", 1)[-1] == key:
+                found.add(sug)
+        if len(found) == 1:
+            forced_commune = next(iter(found))
+        else:
+            warnings.append(f"Xã/phường mặc định \"{forced_commune}\" không có tiền tố Xã/Phường nên đơn vị "
+                            "sẽ không có chữ Xã/Phường - hãy nhập đầy đủ, ví dụ \"Xã " + forced_commune + "\".")
+    if forced_commune:
+        head_commune, head_issuer = forced_commune, None
     if not tables or not any(tables):
         raise ValueError("Tệp nguồn không có dữ liệu.")
 
@@ -2045,10 +2207,11 @@ def source_label(path, sheet=None):
     return f"{name} [Sheet: {sheet}]" if sheet is not None else name
 
 
-def extract_v2_batch(items, dedupe=True, verbose=True):
+def extract_v2_batch(items, dedupe=True, verbose=True, progress=None):
     """
     Chay extract_v2 cho NHIEU nguon va GOP thanh 1 danh sach. Moi nguon la
     (duong_dan, to_chuc_mac_dinh) hoac (duong_dan, sheet, to_chuc_mac_dinh)
+    [, xa_phuong_mac_dinh] (xem extract_v2.default_commune)
     - moi nguon co "To chuc mac dinh" rieng (cac tep/sheet trong 1 lo co the
     thuoc cac tinh khac nhau); sheet=None -> doc theo quy tac mac dinh cua
     extract_v2. Nhan nguon ("source") chi kem ten sheet khi cung 1 tep co
@@ -2064,7 +2227,10 @@ def extract_v2_batch(items, dedupe=True, verbose=True):
 
     Moi ban ghi/issue co them khoa "source" (xem source_label). Tra ve
     (records, stats) cung dang voi extract_v2, kem stats["files"] = [{source,
-    to_chuc, total_read, final_count, error}] cho tung nguon."""
+    to_chuc, total_read, final_count, error}] cho tung nguon.
+
+    progress(done, total): goi (neu co) luc bat dau va sau moi nguon xong
+    (ke ca nguon loi) de giao dien web hien phan tram."""
     all_records = []
     all_issues = []
     warnings = []
@@ -2077,24 +2243,29 @@ def extract_v2_batch(items, dedupe=True, verbose=True):
     norm_items = []
     for it in items:
         if len(it) == 2:
-            norm_items.append((it[0], None, it[1]))
+            norm_items.append((it[0], None, it[1], None))
         else:
-            norm_items.append((it[0], it[1], it[2]))
+            norm_items.append((it[0], it[1], it[2], it[3] if len(it) > 3 else None))
 
     # Chi ghi ten sheet vao nhan nguon khi cung 1 tep xuat hien nhieu lan (tep
     # Excel duoc tach thanh nhieu sheet); tep chi doc 1 sheet thi nhan gon.
     path_counts = {}
-    for path, _sheet, _tc in norm_items:
+    for path, _sheet, _tc, _cm in norm_items:
         path_counts[path] = path_counts.get(path, 0) + 1
 
-    for path, sheet, to_chuc in norm_items:
+    if progress:
+        progress(0, len(norm_items))
+    for idx, (path, sheet, to_chuc, commune) in enumerate(norm_items):
+        if progress and idx:
+            progress(idx, len(norm_items))
         source = source_label(path, sheet if path_counts[path] > 1 else None)
         if verbose:
             print(f"=== {source} (Tổ chức mặc định: {to_chuc or '(trống)'}) ===")
         try:
             # dedupe=False: loc trung duoc lam 1 lan tren ca lo o duoi
             records, stats = extract_v2(path, default_to_chuc=to_chuc or None, dedupe=False,
-                                        verbose=verbose, sheet=sheet)
+                                        verbose=verbose, sheet=sheet,
+                                        default_commune=commune)
         except Exception as e:
             warnings.append(f"{source}: không đọc được tệp - {e}")
             files.append({"source": source, "to_chuc": to_chuc, "total_read": 0, "final_count": 0,
