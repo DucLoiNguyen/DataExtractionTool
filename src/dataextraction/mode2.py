@@ -561,6 +561,14 @@ def normalize_don_vi(raw_don_vi_cong_tac, default_to_chuc=None, doc_commune=None
 
     province = _resolve_current_province(raw_don_vi_cong_tac, default_to_chuc=default_to_chuc)
     if province:
+        # Ten don vi da ghi 'tinh/thanh pho X' o cuoi ('Sở Nông nghiệp và Môi trường tỉnh
+        # Tuyên Quang') -> bo duoi do vi hau to ' - Tuyên Quang' da the hien. Chi bo khi X
+        # DUNG la tinh se them vao hau to (khong mat thong tin) va phan con lai >= 2 tu.
+        tail = _PROVINCE_TAIL_RE.search(core)
+        if tail and get_current_province_name(tail.group(1).strip())[0] == province:
+            head = core[:tail.start()].strip()
+            if len(head.split()) >= 2:
+                core = head
         return f"{core} - {province}"
     return core
 
